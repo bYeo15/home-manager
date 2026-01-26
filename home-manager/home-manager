@@ -576,12 +576,19 @@ function doBuildAttr() {
         extraArgs=("${extraArgs[@]}" "--show-trace")
     fi
 
-    nix-build \
-        "<home-manager/home-manager/home-manager.nix>" \
-        "${extraArgs[@]}" \
-        "${PASSTHROUGH_OPTS[@]}" \
-        --argstr confPath "$HOME_MANAGER_CONFIG" \
-        --argstr confAttr "$HOME_MANAGER_CONFIG_ATTRIBUTE"
+    if [[ -v HOME_MANAGER_OVERRIDE_BUILDER ]]; then
+      nix-build \
+        "$HOME_MANAGER_OVERRIDE_BUILDER" \
+        --attr "$HOME_MANAGER_OVERRIDE_BUILDER_ATTRIBUTE" \
+        "${PASSTHROUGH_OPTS[@]}"
+    else
+      nix-build \
+          "<home-manager/home-manager/home-manager.nix>" \
+          "${extraArgs[@]}" \
+          "${PASSTHROUGH_OPTS[@]}" \
+          --argstr confPath "$HOME_MANAGER_CONFIG" \
+          --argstr confAttr "$HOME_MANAGER_CONFIG_ATTRIBUTE"
+    fi
 }
 
 function doBuildFlake() {
@@ -1060,18 +1067,23 @@ function doHelp() {
     echo
     echo "Options"
     echo
-    echo "  -f FILE           The home configuration file."
-    echo "                    Default is '~/.config/nixpkgs/home.nix'."
-    echo "  -A ATTRIBUTE      Optional attribute that selects a configuration"
-    echo "                    expression in the configuration file."
-    echo "  -I PATH           Add a path to the Nix expression search path."
-    echo "  --flake flake-uri Use Home Manager configuration at flake-uri"
-    echo "                    Default is '~/.config/home-manager'."
-    echo "  -b EXT            Move existing files to new path rather than fail."
-    echo "  -v                Verbose output"
-    echo "  -n                Do a dry run, only prints what actions would be taken"
-    echo "  -h                Print this help"
-    echo "  --version         Print the Home Manager version"
+    echo "  -f FILE                 The home configuration file."
+    echo "                          Default is '~/.config/nixpkgs/home.nix'."
+    echo "  --build-file FILE       The file to substitute as the source of a derivation to"
+    echo "                          build (overrides -f, -A when building a config)"
+    echo "                          NOTE: Does not work with repl/option"
+    echo "  --build-attr ATTRIBUTE  The attribute to use from the build file"
+    echo "                          (no effect without a build file)"
+    echo "  -A ATTRIBUTE            Optional attribute that selects a configuration"
+    echo "                          expression in the configuration file."
+    echo "  -I PATH                 Add a path to the Nix expression search path."
+    echo "  --flake flake-uri       Use Home Manager configuration at flake-uri"
+    echo "                          Default is '~/.config/home-manager'."
+    echo "  -b EXT                  Move existing files to new path rather than fail."
+    echo "  -v                      Verbose output"
+    echo "  -n                      Do a dry run, only prints what actions would be taken"
+    echo "  -h                      Print this help"
+    echo "  --version               Print the Home Manager version"
     echo
     echo "Options passed on to nix-build(1)"
     echo
@@ -1147,6 +1159,7 @@ function doHelp() {
 
 EXTRA_NIX_PATH=()
 HOME_MANAGER_CONFIG_ATTRIBUTE=""
+HOME_MANAGER_OVERRIDE_BUILDER_ATTRIBUTE=""
 PASSTHROUGH_OPTS=()
 COMMAND=""
 COMMAND_ARGS=()
@@ -1182,6 +1195,16 @@ while [[ $# -gt 0 ]]; do
         -f|--file)
             [[ -v 1 && $1 != -* ]] || errMissingOptArg "$opt"
             HOME_MANAGER_CONFIG="$1"
+            shift
+            ;;
+        --build-file)
+            [[ -v 1 && $1 != -* ]] || errMissingOptArg "$opt"
+            export HOME_MANAGER_OVERRIDE_BUILDER="$1"
+            shift
+            ;;
+        --build-attr)
+            [[ -v 1 && $1 != -* ]] || errMissingOptArgs "$opt"
+            HOME_MANAGER_OVERRIDE_BUILDER_ATTRIBUTE="$1"
             shift
             ;;
         --flake)
