@@ -64,7 +64,15 @@ function escapeForNix() {
 # If no configuration file can be found then this function will print
 # an error message and exit with an error code.
 function setConfigFile() {
-    if [[ -v HOME_MANAGER_CONFIG ]] ; then
+    if [[ -v HOME_MANAGER_OVERRIDE_BUILDER ]]; then
+        if [[ -e "$HOME_MANAGER_OVERRIDE_BUILDER" ]]; then
+            HOME_MANAGER_OVERRIDE_BUILDER="$(realpath "$HOME_MANAGER_OVERRIDE_BUILDER")"
+        else
+          _i 'No build target file found at %s' \
+             "$HOME_MANAGER_OVERRIDE_BUILDER" >&2
+          exit 1
+        fi
+    elif [[ -v HOME_MANAGER_CONFIG ]] ; then
         if [[ -e "$HOME_MANAGER_CONFIG" ]] ; then
             HOME_MANAGER_CONFIG="$(realpath "$HOME_MANAGER_CONFIG")"
         else
@@ -577,9 +585,25 @@ function doBuildAttr() {
     fi
 
     if [[ -v HOME_MANAGER_OVERRIDE_BUILDER ]]; then
+      local overrideArgs=()
+      local hitAttr=false
+      local attrTarget="activationPath"
+
+      for a in "${extraArgs[@]}"; do
+          if [[ "$hitAttr" == true ]]; then
+              attrTarget="$a"
+              hitAttr=false
+          elif [[ "$a" == "--attr" ]]; then
+              hitAttr=true
+          else
+              overrideArgs=("${overrideArgs[@]}" "$a")
+          fi
+      done
+
       nix-build \
         "$HOME_MANAGER_OVERRIDE_BUILDER" \
-        --attr "$HOME_MANAGER_OVERRIDE_BUILDER_ATTRIBUTE" \
+        --attr "${HOME_MANAGER_OVERRIDE_BUILDER_ATTRIBUTE}.${attrTarget}" \
+        "${overrideArgs[@]}" \
         "${PASSTHROUGH_OPTS[@]}"
     else
       nix-build \
@@ -1067,23 +1091,24 @@ function doHelp() {
     echo
     echo "Options"
     echo
-    echo "  -f FILE                 The home configuration file."
-    echo "                          Default is '~/.config/nixpkgs/home.nix'."
-    echo "  --build-file FILE       The file to substitute as the source of a derivation to"
-    echo "                          build (overrides -f, -A when building a config)"
-    echo "                          NOTE: Does not work with repl/option"
-    echo "  --build-attr ATTRIBUTE  The attribute to use from the build file"
-    echo "                          (no effect without a build file)"
-    echo "  -A ATTRIBUTE            Optional attribute that selects a configuration"
-    echo "                          expression in the configuration file."
-    echo "  -I PATH                 Add a path to the Nix expression search path."
-    echo "  --flake flake-uri       Use Home Manager configuration at flake-uri"
-    echo "                          Default is '~/.config/home-manager'."
-    echo "  -b EXT                  Move existing files to new path rather than fail."
-    echo "  -v                      Verbose output"
-    echo "  -n                      Do a dry run, only prints what actions would be taken"
-    echo "  -h                      Print this help"
-    echo "  --version               Print the Home Manager version"
+    echo "  --config-file FILE       The home configuration file."
+    echo "                           Default is '~/.config/nixpkgs/home.nix'."
+    echo "  -f | --file FILE         The file to substitute as the source of a derivation to"
+    echo "                           build (overrides --config-file, --config-attr when building"
+    echo "                           a config)"
+    echo "                           NOTE: Does not work with repl/option"
+    echo "  -A | --attr ATTRIBUTE    The attribute to use from the build file"
+    echo "                           (no effect without a build file)"
+    echo "  --config-attr ATTRIBUTE  Optional attribute that selects a configuration"
+    echo "                           expression in the configuration file."
+    echo "  -I PATH                  Add a path to the Nix expression search path."
+    echo "  --flake flake-uri        Use Home Manager configuration at flake-uri"
+    echo "                           Default is '~/.config/home-manager'."
+    echo "  -b EXT                   Move existing files to new path rather than fail."
+    echo "  -v                       Verbose output"
+    echo "  -n                       Do a dry run, only prints what actions would be taken"
+    echo "  -h                       Print this help"
+    echo "  --version                Print the Home Manager version"
     echo
     echo "Options passed on to nix-build(1)"
     echo
@@ -1125,6 +1150,7 @@ function doHelp() {
     echo "      --switch      Immediately activate the generated configuration."
     echo
     echo "  instantiate  Instantiate the configuration and print the resulting derivation"
+    echo "               NOTE: Does not work with custom builders"
     echo
     echo "  switch [OPTION]"
     echo "      Build and activate configuration"
@@ -1144,6 +1170,7 @@ function doHelp() {
     echo
     echo "  repl"
     echo "      Opens the configuration in \`nix repl\`"
+    echo "      NOTE: Does not work with custom builders"
     echo
     echo "  expire-generations TIMESTAMP"
     echo "      Remove generations older than TIMESTAMP where TIMESTAMP is"
@@ -1172,7 +1199,7 @@ while [[ $# -gt 0 ]]; do
         build|init|instantiate|option|edit|expire-generations|generations|help|news|packages|remove-generations|repl|rollback|switch|test|uninstall)
             COMMAND="$opt"
             ;;
-        -A)
+        --config-attr)
             [[ -v 1 && $1 != -* ]] || errMissingOptArg "$opt"
             HOME_MANAGER_CONFIG_ATTRIBUTE="$1"
             shift
@@ -1192,17 +1219,17 @@ while [[ $# -gt 0 ]]; do
             export HOME_MANAGER_BACKUP_EXT="$1"
             shift
             ;;
-        -f|--file)
+        --config-file)
             [[ -v 1 && $1 != -* ]] || errMissingOptArg "$opt"
             HOME_MANAGER_CONFIG="$1"
             shift
             ;;
-        --build-file)
+        -f | --file)
             [[ -v 1 && $1 != -* ]] || errMissingOptArg "$opt"
             export HOME_MANAGER_OVERRIDE_BUILDER="$1"
             shift
             ;;
-        --build-attr)
+        -A | --attr)
             [[ -v 1 && $1 != -* ]] || errMissingOptArgs "$opt"
             HOME_MANAGER_OVERRIDE_BUILDER_ATTRIBUTE="$1"
             shift
