@@ -866,9 +866,9 @@ function doSwitch() {
 
     "$activateScript" --driver-version 1 || return
 
-    if [[ $action == 'switch' || $action == 'test' ]]; then
-        presentNews
-    fi
+    # if [[ $action == 'switch' || $action == 'test' ]]; then
+    #     presentNews
+    # fi
 }
 
 function doListGens() {
