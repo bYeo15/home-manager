@@ -708,7 +708,7 @@ function doBuild() {
         || return
     fi
 
-    presentNews
+    # presentNews
 }
 
 function doRepl() {
