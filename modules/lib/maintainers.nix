@@ -278,12 +278,6 @@
     github = "kalhauge";
     githubId = 1182166;
   };
-  karaolidis = {
-    name = "Nikolaos Karaolidis";
-    email = "nick@karaolidis.com";
-    github = "karaolidis";
-    githubId = 46189100;
-  };
   kmaasrud = {
     name = "Knut Magnus Aasrud";
     email = "km@aasrud.com";
@@ -367,12 +361,6 @@
     email = "mifom@users.noreply.github.com";
     github = "mifom";
     githubId = 23462908;
-  };
-  mikaeladev = {
-    name = "mikaeladev";
-    email = "mikaeladev@users.noreply.github.com";
-    github = "mikaeladev";
-    githubId = 100416544;
   };
   mikilio = {
     name = "mikilio";
@@ -493,6 +481,12 @@
     email = "RosarioPulella@gmail.com";
     github = "Rosuavio";
     githubId = 7164552;
+  };
+  rsahwe = {
+    name = "rsahwe";
+    email = "rsahwe@gmx.net";
+    github = "rsahwe";
+    githubId = 201613730;
   };
   rszamszur = {
     name = "Radosław Szamszur";
