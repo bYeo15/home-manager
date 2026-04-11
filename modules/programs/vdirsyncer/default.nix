@@ -35,7 +35,7 @@ let
     filterAttrs (_: v: v != null) (
       (getAttrs [ "type" "fileExt" "encoding" ] a.local)
       // {
-        path = a.local.path;
+        inherit (a.local) path;
         postHook =
           if a.vdirsyncer.postHook != null then
             (pkgs.writeShellScriptBin "post-hook" a.vdirsyncer.postHook + "/bin/post-hook")
@@ -75,9 +75,9 @@ let
       getAttrs [ "collections" "conflictResolution" "metadata" "partialSync" ] a.vdirsyncer
     );
 
-  pairs = mapAttrs (_: v: pair v) vdirsyncerAccounts;
-  localStorages = mapAttrs (_: v: localStorage v) vdirsyncerAccounts;
-  remoteStorages = mapAttrs (_: v: remoteStorage v) vdirsyncerAccounts;
+  pairs = mapAttrs (_: pair) vdirsyncerAccounts;
+  localStorages = mapAttrs (_: localStorage) vdirsyncerAccounts;
+  remoteStorages = mapAttrs (_: remoteStorage) vdirsyncerAccounts;
 
   optionString =
     n: v:

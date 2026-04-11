@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  options,
   pkgs,
   ...
 }:
@@ -30,6 +31,20 @@ let
 
   inherit (pkgs) neovimUtils;
   jsonFormat = pkgs.formats.json { };
+
+  pluginTypeStateVersion = lib.hm.deprecations.mkStateVersionOptionDefault {
+    inherit (config.home) stateVersion;
+    since = "26.05";
+    optionPath = [
+      "programs"
+      "neovim"
+      "plugins"
+      "PLUGIN"
+      "type"
+    ];
+    legacy.value = "viml";
+    current.value = "lua";
+  };
 in
 {
   meta.maintainers = with lib.maintainers; [ khaneliman ];
@@ -109,7 +124,21 @@ in
 
       withPython3 = mkOption {
         type = types.bool;
-        default = true;
+        inherit
+          (lib.hm.deprecations.mkStateVersionOptionDefault {
+            inherit (config.home) stateVersion;
+            since = "26.05";
+            optionPath = [
+              "programs"
+              "neovim"
+              "withPython3"
+            ];
+            legacy.value = true;
+            current.value = false;
+          })
+          default
+          defaultText
+          ;
         description = ''
           Enable Python 3 provider. Set to `true` to
           use Python 3 plugins.
@@ -117,8 +146,22 @@ in
       };
 
       withRuby = mkOption {
-        type = types.nullOr types.bool;
-        default = false;
+        type = types.bool;
+        inherit
+          (lib.hm.deprecations.mkStateVersionOptionDefault {
+            inherit (config.home) stateVersion;
+            since = "26.05";
+            optionPath = [
+              "programs"
+              "neovim"
+              "withRuby"
+            ];
+            legacy.value = true;
+            current.value = false;
+          })
+          default
+          defaultText
+          ;
         description = ''
           Enable ruby provider.
         '';
@@ -254,7 +297,8 @@ in
                   "fennel"
                 ]) types.str;
                 description = "Language used in config. Configurations are aggregated per-language.";
-                default = "viml";
+                default = pluginTypeStateVersion.effectiveDefault;
+                inherit (pluginTypeStateVersion) defaultText;
               };
 
               optional = mkEnableOption "optional" // {
@@ -391,6 +435,26 @@ in
 
   config = mkIf cfg.enable (
     let
+      legacyPluginTypeWarnings = lib.hm.deprecations.mkStateVersionListSubmoduleWarnings {
+        inherit (config.home) stateVersion;
+        since = "26.05";
+        baseWarning = pluginTypeStateVersion.warning;
+        definitions = options.programs.neovim.plugins.definitionsWithLocations;
+        shouldWarnEntry = lib.hm.deprecations.mkListEntryOmittedFieldPredicate {
+          omittedField = "type";
+          triggerField = "config";
+        };
+        describeEntry =
+          entry:
+          if entry.value ? plugin && entry.value.plugin != null then
+            "plugin `${lib.getName entry.value.plugin}`"
+          else
+            "a plugin entry";
+        extraEntryWarning =
+          _entry:
+          ''Set `type = "viml"` or `type = "lua"` on that plugin entry to make the config language explicit.'';
+      };
+
       allPlugins =
         cfg.plugins
         ++ lib.optional cfg.coc.enable {
@@ -401,7 +465,7 @@ in
         };
 
       defaultPlugin = {
-        type = "viml";
+        type = pluginTypeStateVersion.effectiveDefault;
         plugin = null;
         config = null;
         optional = false;
@@ -476,6 +540,8 @@ in
       wrapperHasUserConfig = wrappedNeovim'.luaRcContent != wrappedNeovim'.providerLuaRc;
     in
     {
+      warnings = legacyPluginTypeWarnings;
+
       programs.neovim = {
         generatedConfigViml = cfg.extraConfig;
 

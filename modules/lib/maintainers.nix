@@ -451,6 +451,12 @@
     github = "pedorich-n";
     githubId = 15573098;
   };
+  philip-730 = {
+    name = "Philip Amendolia";
+    email = "philip.amendolia@gmail.com";
+    github = "philip-730";
+    githubId = 116534928;
+  };
   pltanton = {
     name = "pltanton";
     email = "plotnikovanton@gmail.com";
@@ -510,12 +516,6 @@
     email = "silmarjr2@gmail.com";
     github = "silmarp";
     githubId = 67292496;
-  };
-  vortriz = {
-    name = "Rishi Vora";
-    email = "vorarishi22+nix@gmail.com";
-    github = "Vortriz";
-    githubId = 97402159;
   };
   zorrobert = {
     name = "zorrobert";

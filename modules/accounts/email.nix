@@ -231,6 +231,35 @@ let
     };
   };
 
+  ewsModule = types.submodule {
+    options = {
+      host = mkOption {
+        type = types.str;
+        example = "ews.example.org";
+        description = ''
+          Hostname of EWS server.
+        '';
+      };
+      serviceDescriptionURL = mkOption {
+        type = types.str;
+        example = "https://ews.example.org/ews/exchange.asmx";
+        description = ''
+          URL to EWS service description.
+        '';
+      };
+
+      authentication = authenticationOption;
+
+      tls = mkOption {
+        type = tlsModule;
+        default = { };
+        description = ''
+          Configuration for secure connections.
+        '';
+      };
+    };
+  };
+
   maildirModule = types.submodule (
     { config, ... }:
     {
@@ -522,6 +551,14 @@ let
           '';
         };
 
+        ews = mkOption {
+          type = types.nullOr ewsModule;
+          default = null;
+          description = ''
+            The EWS configuration to use for this account.
+          '';
+        };
+
         maildir = mkOption {
           type = types.nullOr maildirModule;
           defaultText = {
@@ -535,7 +572,7 @@ let
 
       config = lib.mkMerge [
         {
-          name = name;
+          inherit name;
           maildir = lib.mkOptionDefault { path = "${name}"; };
         }
 

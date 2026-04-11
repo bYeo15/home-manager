@@ -210,9 +210,7 @@ let
       genGroupsChannels = group: concatStringsSep "\n" (genChannelStrings group.name group.channels);
       # Generate all channel configurations for all groups for this account.
     in
-    concatStringsSep "\n" (
-      lib.remove "" (mapAttrsToList (name: group: genGroupsChannels group) groups)
-    );
+    concatStringsSep "\n" (lib.remove "" (mapAttrsToList (name: genGroupsChannels) groups));
 
   # Given the attr set of groups, return a string which maps channels to groups
   genAccountGroups =
@@ -250,7 +248,7 @@ let
 
 in
 {
-  meta.maintainers = [ lib.maintainers.KarlJoad ];
+  meta.maintainers = [ lib.maintainers.ravenjoad ];
 
   options = {
     programs.mbsync = {
