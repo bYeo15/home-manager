@@ -244,14 +244,15 @@ let
     }
     // optionalAttrs (calendar.thunderbird.color != "") {
       "calendar.registry.calendar_${id}.color" = calendar.thunderbird.color;
-    };
+    }
+    // calendar.thunderbird.settings id;
 
   toThunderbirdContact =
     contact: _:
     let
       inherit (contact) id;
     in
-    lib.filterAttrs (n: v: v != null) (
+    lib.filterAttrs (_n: v: v != null) (
       {
         "ldap_2.servers.contact_${id}.description" = contact.name;
         "ldap_2.servers.contact_${id}.filename" = "contact_${id}.sqlite"; # this is needed for carddav to work
@@ -770,6 +771,37 @@ in
               example = "#dc8add";
               description = "Display color of the calendar in hex";
             };
+
+            settings = mkOption {
+              type =
+                with types;
+                functionTo (
+                  attrsOf (oneOf [
+                    bool
+                    int
+                    str
+                  ])
+                );
+              default = _: { };
+              defaultText = literalExpression "_: { }";
+              example = literalExpression ''
+                id: {
+                  "calendar.registry.''${id}.refreshInterval" = 5;
+
+                  # If "my-awesome-account" is the attribute name of an email account under
+                  # `config.accounts.email.accounts`, the below snippet links this calendar
+                  # account to "my-awesome-account".
+
+                  "calendar.registry.''${id}.imip.identity.key" =
+                    "id_''${builtins.hashString "sha256" "my-awesome-account"}";
+                };
+              '';
+              description = ''
+                Extra settings to add to this Thunderbird calendar configuration.
+                The {var}`id` given as argument is an automatically
+                generated account identifier.
+              '';
+            };
           };
         });
     };
@@ -970,7 +1002,7 @@ in
 
                   # Append the default local folder name "account1".
                   # See https://github.com/nix-community/home-manager/issues/5031.
-                  enabledAccountsIds = (lib.attrsets.mapAttrsToList (name: value: value) accountNameToId) ++ [
+                  enabledAccountsIds = (lib.attrsets.mapAttrsToList (_name: value: value) accountNameToId) ++ [
                     "account1"
                   ];
                 in
@@ -989,7 +1021,7 @@ in
 
                   accountsOrderIds = map (a: accountNameToId."${a}" or a) profile.calendarAccountsOrder;
 
-                  enabledAccountsIds = (lib.attrsets.mapAttrsToList (name: value: value) accountNameToId);
+                  enabledAccountsIds = (lib.attrsets.mapAttrsToList (_name: value: value) accountNameToId);
                 in
                 lib.optionals (calendarAccounts != [ ]) (
                   accountsOrderIds ++ (lib.lists.subtractLists accountsOrderIds enabledAccountsIds)
@@ -1045,7 +1077,7 @@ in
         }
       )
       ++ (mapAttrsToList (
-        name: profile:
+        name: _profile:
         let
           emailAccountsWithFilters = (
             filter (a: a.thunderbird.messageFilters != [ ]) (

@@ -228,6 +228,12 @@
       }
     ];
   };
+  isaacST08 = {
+    name = "Isaac Shiells Thomas";
+    email = "isaacst.nix@proton.me";
+    github = "isaacST08";
+    githubId = 106057977;
+  };
   jack5079 = {
     name = "Jack W.";
     email = "nix@jack.cab";
@@ -516,6 +522,18 @@
     email = "silmarjr2@gmail.com";
     github = "silmarp";
     githubId = 67292496;
+  };
+  soracat = {
+    name = "soracat";
+    email = "125882337+s0racat@users.noreply.github.com";
+    github = "s0racat";
+    githubId = 125882337;
+  };
+  yarn = {
+    name = "yarncat";
+    email = "30006414+yaaaarn@users.noreply.github.com";
+    github = "yaaaarn";
+    githubId = 30006414;
   };
   zorrobert = {
     name = "zorrobert";
