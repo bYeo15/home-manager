@@ -283,10 +283,13 @@ in
       internal = true;
       type = types.str;
       default =
-        lib.toUpper (lib.substring 0 1 cfg.wrappedPackageName)
-        + lib.toLower (
-          lib.substring 1 ((lib.stringLength cfg.wrappedPackageName) - 1) cfg.wrappedPackageName
-        );
+        if platforms.darwin ? "appName" then
+          platforms.darwin.appName
+        else
+          lib.toUpper (lib.substring 0 1 cfg.wrappedPackageName)
+          + lib.toLower (
+            lib.substring 1 ((lib.stringLength cfg.wrappedPackageName) - 1) cfg.wrappedPackageName
+          );
       description = "Name of browser app on Darwin.";
     };
 
@@ -689,6 +692,20 @@ in
                         `"extensions.autoDisableScopes" = 0;`
                         to
                         [{option}`${moduleName}.profiles.<profile>.settings`](#opt-${moduleName}.profiles._name_.settings)
+
+                        On systems using impermanence, this only prevents
+                        ${name} from requiring manual extension approval. It
+                        does not preserve extension runtime state such as
+                        extension UUIDs, logins, local storage, or
+                        per-extension data. Persist the ${name} profile state
+                        needed by your extensions, or configure supported
+                        extension settings declaratively with
+                        [{option}`${moduleName}.profiles.<profile>.extensions.settings`](#opt-${moduleName}.profiles._name_.extensions.settings).
+
+                        Persisting only the `extensions` directory is generally
+                        not sufficient, because ${name} stores extension state
+                        in other profile files and databases that are managed
+                        outside Home Manager.
                       '';
                     };
 
@@ -907,7 +924,27 @@ in
         )
       );
       default = { };
-      description = "Attribute set of ${appName} profiles.";
+      example = lib.optionalAttrs (moduleName == "programs.firefox") (literalExpression ''
+        {
+          "dev-edition-default" = {
+            id = 0;
+            path = config.home.username;
+
+            settings = {
+              "browser.aboutConfig.showWarning" = false;
+            };
+          };
+        }
+      '');
+      description = ''
+        Attribute set of ${appName} profiles.
+
+        ${lib.optionalString (moduleName == "programs.firefox") ''
+          When using Firefox Developer Edition, the profile name should be
+          `dev-edition-default`. You can still set {option}`path` to store the
+          profile in a custom directory.
+        ''}
+      '';
     };
 
     enableGnomeExtensions = mkOption {

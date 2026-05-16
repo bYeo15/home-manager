@@ -151,6 +151,12 @@
     github = "dsoverlord";
     githubId = 78819443;
   };
+  dsqr = {
+    name = "Dave Dennis";
+    email = "me@dsqr.dev";
+    github = "0xdsqr";
+    githubId = 99584622;
+  };
   dwagenk = {
     email = "dwagenk@mailbox.org";
     github = "dwagenk";
@@ -204,6 +210,12 @@
     email = "fpob@proton.me";
     github = "fpob";
     githubId = 6289078;
+  };
+  garklein = {
+    name = "Garklein";
+    email = "garklein97@gmail.com";
+    github = "garklein";
+    githubId = 63201615;
   };
   gauthsvenkat = {
     email = "gauthsvenkat+home-manager@gmail.com";
@@ -427,12 +439,6 @@
     email = "nitro@ortin.dev";
     github = "NitroSniper";
     githubId = 44097331;
-  };
-  nurelin = {
-    name = "nurelin";
-    email = "nurelin@users.noreply.github.com";
-    github = "nurelin";
-    githubId = 5276274;
   };
   olmokramer = {
     name = "Olmo Kramer";

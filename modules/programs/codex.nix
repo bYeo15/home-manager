@@ -14,7 +14,6 @@ let
 
   packageVersion = if cfg.package != null then lib.getVersion cfg.package else "0.94.0";
   isTomlConfig = lib.versionAtLeast packageVersion "0.2.0";
-  isAgentsSkillsSupported = lib.versionAtLeast packageVersion "0.94.0";
   settingsFormat = if isTomlConfig then tomlFormat else yamlFormat;
 in
 {
@@ -125,9 +124,10 @@ in
         {file}`<skills-dir>/` itself as a normal directory so unmanaged
         skills can coexist.
 
-        The skills target directory depends on Codex version:
-        - {file}`~/.agents/skills` for Codex >= 0.94.0
-        - {file}`~/.codex/skills` for older versions
+        Home Manager manages skills under {file}`CODEX_HOME/skills`
+        (typically {file}`~/.codex/skills`, or
+        {file}`~/.config/codex/skills` when
+        {option}`home.preferXdgDirectories` is enabled).
       '';
       example = lib.literalExpression ''
         {
@@ -186,12 +186,13 @@ in
       xdgConfigHome = lib.removePrefix config.home.homeDirectory config.xdg.configHome;
       configDir = if useXdgDirectories then "${xdgConfigHome}/codex" else ".codex";
       configFileName = if isTomlConfig then "config.toml" else "config.yaml";
-      skillsDir = if isAgentsSkillsSupported then ".agents/skills" else "${configDir}/skills";
+      skillsDir = "${configDir}/skills";
 
       # TODO: Remove this workaround once Codex supports symlinked SKILL.md
       # files again. Upstream only supports symlinking the containing skill
       # directory today: https://github.com/openai/codex/issues/10470
-      isStorePathString = content: builtins.isString content && lib.hasPrefix builtins.storeDir content;
+      isStorePathString =
+        content: builtins.isString content && lib.hasPrefix "${builtins.storeDir}/" content;
       isPathLikeContent = content: lib.isPath content || isStorePathString content;
       mkSkillDir =
         content:
@@ -201,7 +202,7 @@ in
       skillSources =
         if builtins.isAttrs cfg.skills then
           cfg.skills
-        else if lib.isPath cfg.skills && lib.pathIsDirectory cfg.skills then
+        else if isPathLikeContent cfg.skills && lib.pathIsDirectory cfg.skills then
           lib.mapAttrs (name: _type: cfg.skills + "/${name}") (builtins.readDir cfg.skills)
         else
           { };
@@ -250,7 +251,7 @@ in
     mkIf cfg.enable {
       assertions = [
         {
-          assertion = !lib.isPath cfg.skills || lib.pathIsDirectory cfg.skills;
+          assertion = !isPathLikeContent cfg.skills || lib.pathIsDirectory cfg.skills;
           message = "`programs.codex.skills` must be a directory when set to a path";
         }
         {

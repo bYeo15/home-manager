@@ -247,11 +247,26 @@ in
 
         sessionVariables = mkOption {
           default = { };
-          type = types.attrs;
+          type =
+            with types;
+            lazyAttrsOf (
+              nullOr (oneOf [
+                str
+                path
+                int
+                float
+                bool
+              ])
+            );
           example = {
             MAILCHECK = 30;
           };
-          description = "Environment variables that will be set for zsh session.";
+          description = ''
+            Environment variables that will be set for zsh session.
+
+            Setting a value to `null` will skip setting the variable at all, which
+            may be useful when overriding.
+          '';
         };
 
         initContent = mkOption {

@@ -21,6 +21,13 @@
     name = "0xda157";
     source = "nixpkgs";
   };
+  "0xdsqr" = {
+    email = "me@dsqr.dev";
+    github = "0xdsqr";
+    githubId = 99584622;
+    name = "Dave Dennis";
+    source = "nixpkgs";
+  };
   "3ulalia" = {
     email = "3ulalia@proton.me";
     github = "3ulalia";
@@ -1252,6 +1259,13 @@
     name = "Ilya Savitsky";
     source = "nixpkgs";
   };
+  isaacST08 = {
+    email = "isaacst.nix@proton.me";
+    github = "isaacST08";
+    githubId = 106057977;
+    name = "Isaac Shiells Thomas";
+    source = "home-manager";
+  };
   iynaix = {
     email = "iynaix@gmail.com";
     github = "iynaix";
@@ -1818,26 +1832,21 @@
     email = "nukdokplex@nukdokplex.ru";
     github = "nukdokplex";
     githubId = 25458915;
-    keys = [
-      {
-        fingerprint = "7CE2 4C42 942D 58EA 99F6  F00A A47E 7374 3EF6 FCC4";
-      }
-    ];
     name = "Viktor Titov";
     source = "nixpkgs";
-  };
-  nurelin = {
-    email = "nurelin@users.noreply.github.com";
-    github = "nurelin";
-    githubId = 5276274;
-    name = "nurelin";
-    source = "home-manager";
   };
   nyarly = {
     email = "nyarly@gmail.com";
     github = "nyarly";
     githubId = 127548;
     name = "Judson Lester";
+    source = "nixpkgs";
+  };
+  ojsef39 = {
+    email = "me+github@jhofer.de";
+    github = "ojsef39";
+    githubId = 43563019;
+    name = "Josef Hofer";
     source = "nixpkgs";
   };
   olmokramer = {
@@ -1928,13 +1937,6 @@
     github = "philocalyst";
     githubId = 114884788;
     name = "Myles Wirth";
-    source = "nixpkgs";
-  };
-  pinage404 = {
-    email = "pinage404+nixpkgs@gmail.com";
-    github = "pinage404";
-    githubId = 6325757;
-    name = "pinage404";
     source = "nixpkgs";
   };
   pjones = {
@@ -2110,6 +2112,13 @@
     name = "Robert Helgesson";
     source = "nixpkgs";
   };
+  s0racat = {
+    email = "125882337+s0racat@users.noreply.github.com";
+    github = "s0racat";
+    githubId = 125882337;
+    name = "soracat";
+    source = "nixpkgs";
+  };
   sableseyler = {
     email = "sable@seyleri.us";
     github = "sableseyler";
@@ -2120,6 +2129,13 @@
       }
     ];
     name = "Sable Seyler";
+    source = "nixpkgs";
+  };
+  sei40kr = {
+    email = "sei40kr@gmail.com";
+    github = "sei40kr";
+    githubId = 11665236;
+    name = "Seong Yong-ju";
     source = "nixpkgs";
   };
   shikanime = {
@@ -2398,6 +2414,12 @@
       }
     ];
     name = "Jona Abdinghoff";
+    source = "nixpkgs";
+  };
+  zh4ngx = {
+    github = "zh4ngx";
+    githubId = 1329212;
+    name = "Andy Zhang";
     source = "nixpkgs";
   };
   zorrobert = {
