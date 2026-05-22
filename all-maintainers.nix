@@ -119,6 +119,14 @@
     name = "Denis Kaynar";
     source = "home-manager";
   };
+  Eveeifyeve = {
+    email = "eveeg1971@gmail.com";
+    github = "Eveeifyeve";
+    githubId = 88671402;
+    matrix = "@eveeifyeve:matrix.org";
+    name = "Eveeifyeve";
+    source = "nixpkgs";
+  };
   Fendse = {
     email = "46252070+Fendse@users.noreply.github.com";
     github = "Fendse";
@@ -423,6 +431,12 @@
     ];
     name = "Mel Bourgeois";
     source = "nixpkgs";
+  };
+  SunOfLife1 = {
+    github = "SunOfLife1";
+    githubId = 30405063;
+    name = "SunOfLife1";
+    source = "home-manager";
   };
   Swarsel = {
     email = "leon@swarsel.win";
@@ -1137,6 +1151,13 @@
     name = "Fugi";
     source = "nixpkgs";
   };
+  garklein = {
+    email = "garklein97@gmail.com";
+    github = "garklein";
+    githubId = 63201615;
+    name = "Garklein";
+    source = "home-manager";
+  };
   gauthsvenkat = {
     email = "gauthsvenkat+home-manager@gmail.com";
     github = "gauthsvenkat";
@@ -1236,6 +1257,18 @@
     github = "hitsmaxft";
     githubId = 352727;
     name = "Bhe Hongtyu";
+    source = "nixpkgs";
+  };
+  iamanaws = {
+    email = "iamanaws@httpd.dev";
+    github = "iamanaws";
+    githubId = 78835633;
+    keys = [
+      {
+        fingerprint = "CF10 DCBB 9318 BE1D 6040  4222 272C 61AB 190D ED28";
+      }
+    ];
+    name = "Angel J";
     source = "nixpkgs";
   };
   ilaumjd = {
@@ -1462,6 +1495,13 @@
     githubId = 54394333;
     name = "Knut Magnus Aasrud";
     source = "home-manager";
+  };
+  kpbaks = {
+    email = "kristoffer.pbs@gmail.com";
+    github = "kpbaks";
+    githubId = 57013304;
+    name = "Kristoffer Plagborg Bak Sørensen";
+    source = "nixpkgs";
   };
   kubukoz = {
     email = "kubukoz@gmail.com";
