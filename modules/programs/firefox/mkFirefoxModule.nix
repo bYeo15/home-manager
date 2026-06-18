@@ -195,11 +195,14 @@ let
     if package == null then
       null
     else if isWrapped then
-      package.override (old: {
-        cfg = old.cfg or { } // fcfg;
-        extraPolicies = (old.extraPolicies or { }) // cfg.policies;
-        pkcs11Modules = (old.pkcs11Modules or [ ]) ++ cfg.pkcs11Modules;
-      })
+      package.override (
+        old:
+        lib.optionalAttrs (lib.functionArgs package.override ? cfg) {
+          cfg = old.cfg or { } // fcfg;
+          extraPolicies = (old.extraPolicies or { }) // cfg.policies;
+          pkcs11Modules = (old.pkcs11Modules or [ ]) ++ cfg.pkcs11Modules;
+        }
+      )
     else
       (pkgs.wrapFirefox.override { config = bcfg; }) package { };
 
@@ -483,25 +486,11 @@ in
                     (
                       bookmarks:
                       if bookmarks != { } then
-                        lib.warn
-                          ''
-                            ${cfg.name} bookmarks have been refactored into a submodule that now explicitly require a 'force' option to be enabled.
-
-                            Replace:
-
-                            ${moduleName}.profiles.${name}.bookmarks = [ ... ];
-
-                            With:
-
-                            ${moduleName}.profiles.${name}.bookmarks = {
-                              force = true;
-                              settings = [ ... ];
-                            };
-                          ''
-                          {
-                            force = true;
-                            settings = bookmarks;
-                          }
+                        {
+                          force = true;
+                          _legacySettings = if builtins.isList bookmarks then "a list" else "an attribute set";
+                          settings = bookmarks;
+                        }
                       else
                         { }
                     )
@@ -1028,7 +1017,59 @@ in
         ++ optional (cfg.vendorPath != null) ''
           Using '${moduleName}.vendorPath' has been deprecated and
           will be removed in the future. Native messaging hosts will function normally without specifying this path.
-        '';
+        ''
+        ++ lib.flatten (
+          lib.mapAttrsToList (
+            name: profile:
+            lib.optional (profile.bookmarks._legacySettings != null) (
+              let
+                legacySettingsExample =
+                  if profile.bookmarks._legacySettings == "a list" then "[ ... ]" else "{ ... }";
+              in
+              lib.hm.deprecations.mkDeprecatedOptionValueWarning {
+                option = modulePath ++ [
+                  "profiles"
+                  name
+                  "bookmarks"
+                ];
+                old = profile.bookmarks._legacySettings;
+                replacement = "`${
+                  lib.showOption (
+                    modulePath
+                    ++ [
+                      "profiles"
+                      name
+                      "bookmarks"
+                      "settings"
+                    ]
+                  )
+                }` with `${
+                  lib.showOption (
+                    modulePath
+                    ++ [
+                      "profiles"
+                      name
+                      "bookmarks"
+                      "force"
+                    ]
+                  )
+                } = true`";
+                details = ''
+                  Set `force = true` to acknowledge replacing existing custom bookmarks.
+
+                  Replace:
+                    ${moduleName}.profiles.${name}.bookmarks = ${legacySettingsExample};
+
+                  With:
+                    ${moduleName}.profiles.${name}.bookmarks = {
+                      force = true;
+                      settings = ${legacySettingsExample};
+                    };
+                '';
+              }
+            )
+          ) cfg.profiles
+        );
       targets.darwin.defaults = (
         mkIf (cfg.darwinDefaultsId != null && isDarwin) {
 

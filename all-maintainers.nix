@@ -119,6 +119,13 @@
     name = "Denis Kaynar";
     source = "home-manager";
   };
+  ErinaYip = {
+    email = "erinayip@outlook.com";
+    github = "ErinaYip";
+    githubId = 227132255;
+    name = "erina";
+    source = "home-manager";
+  };
   Eveeifyeve = {
     email = "eveeg1971@gmail.com";
     github = "Eveeifyeve";
@@ -405,13 +412,6 @@
     name = "Sefa Eyeoglu";
     source = "nixpkgs";
   };
-  SebTM = {
-    email = "mail@sebastian-sellmeier.de";
-    github = "SebTM";
-    githubId = 17243347;
-    name = "Sebastian Sellmeier";
-    source = "nixpkgs";
-  };
   ShamrockLee = {
     email = "shamrocklee@posteo.net";
     github = "ShamrockLee";
@@ -527,14 +527,6 @@
     githubId = 52529234;
     matrix = "@adda0:matrix.org";
     name = "David Chocholatý";
-    source = "nixpkgs";
-  };
-  adisbladis = {
-    email = "adisbladis@gmail.com";
-    github = "adisbladis";
-    githubId = 63286;
-    matrix = "@adis:blad.is";
-    name = "Adam Hose";
     source = "nixpkgs";
   };
   afresquet = {
@@ -692,6 +684,13 @@
     ];
     name = "Filippo Berto";
     source = "nixpkgs";
+  };
+  bittner = {
+    email = "peter@painless.software";
+    github = "bittner";
+    githubId = 665072;
+    name = "Peter Bittner";
+    source = "home-manager";
   };
   bjpbakker = {
     email = "bart@thesoftwarecraft.com";
@@ -1474,6 +1473,13 @@
     name = "Nikolaos Karaolidis";
     source = "nixpkgs";
   };
+  kayskayskays = {
+    email = "115312476+kayskayskays@users.noreply.github.com";
+    github = "kayskayskays";
+    githubId = 115312476;
+    name = "Kays";
+    source = "home-manager";
+  };
   khaneliman = {
     email = "khaneliman12@gmail.com";
     github = "khaneliman";
@@ -1623,6 +1629,13 @@
     github = "mana-byte";
     githubId = 93316844;
     name = "Manaiki Laut";
+    source = "nixpkgs";
+  };
+  marijanp = {
+    email = "marijan.petricevic94@gmail.com";
+    github = "marijanp";
+    githubId = 13599169;
+    name = "Marijan Petričević";
     source = "nixpkgs";
   };
   mateusauler = {
@@ -2178,6 +2191,13 @@
     name = "Seong Yong-ju";
     source = "nixpkgs";
   };
+  semi710 = {
+    email = "nik.singh710@gmail.com";
+    github = "semi710";
+    githubId = 60490474;
+    name = "Nikhil Singh";
+    source = "home-manager";
+  };
   shikanime = {
     email = "william.phetsinorath@shikanime.studio";
     github = "shikanime";
@@ -2256,6 +2276,13 @@
     githubId = 16734772;
     name = "Sumner Evans";
     source = "nixpkgs";
+  };
+  superflash41 = {
+    email = "saymon.nicho@pucp.edu.pe";
+    github = "superflash41";
+    githubId = 102434258;
+    name = "Saymon Nicho";
+    source = "home-manager";
   };
   surfaceflinger = {
     email = "nat@nekopon.pl";
