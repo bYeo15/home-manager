@@ -53,16 +53,164 @@ the software to function correctly. It follows that a module for
 software that provides sensible default values for all settings would
 require no explicit options at all.
 
-If the software uses a structured configuration format like a JSON,
-YAML, INI, TOML, or even a plain list of key/value pairs then consider
-using a `settings` option as described in [Nix RFC
-42](https://github.com/NixOS/rfcs/blob/master/rfcs/0042-config-option.md).
+For structured configuration, as described in [Nix RFC
+42](https://github.com/NixOS/rfcs/blob/master/rfcs/0042-config-option.md),
+prefer an upstream-shaped `settings` option using the matching `pkgs.formats`
+type and generator where available. Preserve
+upstream setting names and allow fields that the module does not explicitly
+model. For a single configuration file, name the option `settings`. When
+managing multiple configuration files, prefix each settings option with a
+file-specific name, such as `appSettings` or `keymapSettings`.
+
+Model a separate option when it adds useful Home Manager integration,
+validation, or behavior rather than merely translating an upstream setting.
+Keep settings empty by default where the application supplies its own
+defaults. Add module-provided defaults only when needed for the module's
+behavior, and explain that requirement. Keep a raw-text escape hatch when the
+structured generator cannot express valid configuration, and document how
+generated settings and raw text are ordered.
+
+Reuse an existing format generator or Home Manager helper before writing a
+serializer. Check that it preserves the application's required syntax and
+ordering. A custom serializer is appropriate when the existing generators
+cannot express those semantics; explain the limitation and test its output.
+
+These guidelines describe the minimum option design requirements. Before
+submitting a module, compare it against the upstream documentation or
+source code and verify that the generated files, services, environment
+variables, and command line arguments all match the upstream behavior
+you intend to expose.
+
+Check where the application actually reads its configuration on each
+supported platform. Do not assume Darwin uses XDG paths when XDG is disabled.
+Wrappers and environment variables should preserve upstream project-local
+configuration lookup and explicit user overrides unless the module
+deliberately documents a different behavior.
+
+Check whether the application writes the managed file during normal use. A
+store symlink may fail writes or be replaced by a regular file, causing later
+activation collisions. Prefer a supported upstream configuration layer when
+available. An authoritative declarative file with documented resets on
+activation can also be appropriate. If writable merging is necessary,
+reuse `lib.hm.generators.mkImpureConfigMerger` when its supported formats and
+preservation semantics fit, rather than adding a module-local lifecycle.
+Check its documented limitations, including loss of comments and formatting.
+Document the ownership of saved settings. Do not make all settings mutable
+merely because the application has an editor.
+
+If a module installs a package, try to make the package option nullable,
+for example
+
+``` nix
+package = lib.mkPackageOption pkgs "xdg-terminal-exec" { nullable = true; };
+```
+
+This lets users keep installation outside Home Manager, for example via
+`apt` or because the program is built into macOS, while still using the
+module for configuration. Keeping the package non-nullable is fine when
+the enabled behavior structurally requires the executable or when
+package-less support would make the module significantly more complex.
+
+Avoid generating configuration files for empty settings or optional features
+that are not configured, unless the application requires the file. When a
+package option is nullable, `package = null` should omit installation without
+disabling configuration that can work independently of that package. Guard
+package-derived values and executable consumers as well as `home.packages`.
+If an optional service requires the configured executable, explain the
+invalid combination with an assertion and guard the service's generation.
+
+Use the configured package consistently. If a null package intentionally means
+using an externally installed executable, document and test that behavior.
+Do not assume a command exists on `PATH` merely because the package is null.
+
+Keep integrations under the user's control. Follow existing
+`enableXIntegration` conventions and use the corresponding `lib.hm.shell`
+option helpers for shell integrations, so they respect Home Manager's shared
+defaults. Do not silently enable another module to satisfy a prerequisite;
+document it and use a warning or assertion as appropriate. An assertion should
+reject an invalid configuration, not a case with a working fallback.
+
+If upstream does not use XDG paths by default but supports changing the
+configuration location with an environment variable, for example
+`FOO_HOME`, expose a `configDir` option and use it to respect
+`home.preferXdgDirectories`.
+
+## Migrate settings with shared helpers {#sec-guidelines-settings-migrations}
+
+Use `lib.hm.deprecations.mkSettingsRenamedOptionModules` for unchanged values
+moving into settings. Specify native key paths explicitly when casing or
+literal dotted keys differ from the default snake-case transformation.
+Set `preserveOrder = true` when legacy and new list definitions must retain
+relative `mkBefore` and `mkAfter` ordering. For value conversions into a
+freeform setting, use `lib.hm.deprecations.mkSettingsChangedOptionModule`.
+It wraps `lib.mkChangedOptionModule` and retains reads of the legacy value;
+a rename instead reads back the canonical setting.
+
+For a default-empty attribute-set option formerly applied as a final overlay,
+use `lib.hm.deprecations.mkSettingsOverlay`:
+
+``` nix
+let
+  overlay = lib.hm.deprecations.mkSettingsOverlay {
+    inherit options;
+    from = [ "programs" "example" "extraConfig" ];
+    to = [ "programs" "example" "settings" ];
+  };
+in
+{
+  imports = [ overlay.module ];
+}
+```
+
+The helper forwards raw definitions, applying root priorities only to supplied
+keys. Use `overlay.keys` to suppress modeled contributions for keys that the
+old overlay overwrote. Disabled conditional keys are absent; explicit null
+and empty values still count as supplied. Whole sources weaker than the old
+empty option default are ignored.
+
+To forward legacy values at a different priority, pass `priority` to the
+same rename helper. The default, `null`, preserves source priorities.
+For example:
+
+``` nix
+lib.hm.deprecations.mkSettingsRenamedOptionModules
+  [ "programs" "example" ] [ "programs" "example" "settings" ]
+  { priority = 1400; }
+  [
+    { old = "font"; new = "font"; shadowed = lib.elem "font" overlay.keys; }
+  ]
+```
+
+This resolves competing legacy definitions first, then forwards the winners
+at priority 1400, below ordinary and per-setting `mkDefault` values. With a
+priority override, source definitions weaker than option defaults are ignored.
+Destinations must be freeform keys; specifications can supply `fallback` for
+reads of absent keys and `shadowed` to retain the old overlay's precedence
+without suppressing warnings. Priority overrides also compose with
+`preserveOrder = true`.
+
+An active legacy source can discard a whole-settings `mkDefault`, including
+unrelated keys. Use per-setting defaults when combining legacy and new values.
+
+For converted settings, supply `from`, the settings path `to`, a literal `key`
+under it, `convert`, and the historical `oldOption` declaration. Warnings name
+`to` followed by `key`. The helper handles warnings, source-priority checks,
+and forwarding. Its `priority` defaults to 1500, and `shadowed` suppresses
+conversion without suppressing the warning.
+Option-default definitions are ignored unless the `applyDefault` predicate
+selects their merged value. For example, a legacy list that permits additions
+at option-default priority can use `applyDefault = value: value != [ ];`.
+Do not enable this for defaults that the application should supply itself.
+
+Keep application defaults, conversions, and output filtering in the module.
+Test legacy overlay precedence and ordinary settings overrides separately.
+Do not replace module merging with a final attribute-set overlay on settings.
 
 ## Add relevant tests {#sec-guidelines-add-tests}
 
 If at all possible, make sure to add new tests and expand existing tests
 so that your change will keep working in the future. See
-[Tests](#sec-tests) for more information about the Home Manager test
+[Tests](tests.md#sec-tests) for more information about the Home Manager test
 suite.
 
 All contributed code *must* pass the test suite.
@@ -81,7 +229,7 @@ Manager Git repository:
 
 ``` shell
 $ nix-build -A docs.html
-$ xdg-open ./result/share/doc/home-manager/index.xhtml
+$ xdg-open ./result/share/doc/home-manager/index.html
 ```
 
 When you have made changes to a module, it is a good idea to check that
@@ -89,7 +237,7 @@ the man page version of the module options looks good:
 
 ``` shell
 $ nix-build -A docs.manPages
-$ man ./result/share/man/man5/home-configuration.nix.5.gz
+$ man ./result/share/man/man5/home-configuration.nix.5
 ```
 
 ## Module Auto-importing {#sec-module-auto-importing}
@@ -155,7 +303,7 @@ consistent commit message format as described in
 
 If your contribution includes a change that should be communicated to
 users of Home Manager then you can add a news entry. The entry must be
-formatted as described in [News](#sec-news).
+formatted as described in [News](news.md#sec-news).
 
 When new modules are added a news entry should be included.
 
@@ -163,7 +311,7 @@ News entries and release notes serve different purposes. Release notes
 should be updated separately when a change affects users migrating
 between stable releases, such as state version default changes, required
 migration steps, or broad behavior changes. See
-[Release Notes](#sec-contributing-release-notes) and [News](#sec-news)
+[Release Notes](release-notes.md#sec-contributing-release-notes) and [News](news.md#sec-news)
 for more details.
 
 ## Use conditional modules and news {#sec-guidelines-conditional-modules}
@@ -173,12 +321,16 @@ of the supported platforms. The most common example of platform specific
 modules are those that define systemd user services, which only works on
 Linux systems.
 
-If you add a module that is platform specific then make sure to include
-a condition in the `loadModule` function call. This will make the module
-accessible only on systems where the condition evaluates to `true`.
+If you add a module that is platform specific then make sure the module
+guards platform-specific configuration with an appropriate condition, for
+example `pkgs.stdenv.hostPlatform.isLinux` or
+`pkgs.stdenv.hostPlatform.isDarwin`. Modules in `modules/programs/` and
+`modules/services/` are auto-imported, so the platform condition should live
+in the module behavior and in any platform-specific tests rather than in a
+separate module discovery call.
 
 Similarly, if you are adding a news entry then it should be shown only
-to users that may find it relevant, see [News](#sec-news) for a
+to users that may find it relevant, see [News](news.md#sec-news) for a
 description of conditional news.
 
 ## Mind the license {#sec-guidelines-licensing}
@@ -200,6 +352,11 @@ The commits in your pull request should be reasonably self-contained,
 that is, each commit should make sense in isolation. In particular, you
 will be asked to amend any commit that introduces syntax errors or
 similar problems even if they are fixed in a later commit.
+
+Keep commits atomic and separated by concern. For example, a new
+maintainer entry should be a separate first commit, and a shared module
+should be committed separately from integrations in existing modules.
+Pull requests should not include merge commits or fixup commits.
 
 The commit messages should follow the [seven
 rules](https://chris.beams.io/posts/git-commit/#seven-rules), except for

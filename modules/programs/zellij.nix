@@ -152,7 +152,7 @@ in
       type = types.listOf types.package;
       default = [ ];
       example = lib.literalExpression ''
-        with pkgs.zellijPlugins; [ jbz vim-plugins-navigator zjstatus ]
+        with pkgs.zellijPlugins; [ jbz vim-zellij-navigator zjstatus ]
       '';
       description = "List of Zellij plugins";
     };
@@ -288,6 +288,10 @@ in
       pluginRuntimeDeps = lib.concatLists (
         lib.map ({ plugin, ... }: plugin.runtimeDeps or [ ]) pluginsWithNames
       );
+      toKDL = lib.hm.generators.toKDL {
+        escapeBackslashes = lib.versionAtLeast config.home.stateVersion "26.11";
+        escapeTabs = lib.versionAtLeast config.home.stateVersion "26.11";
+      };
     in
     mkIf cfg.enable {
       home.packages = [ cfg.finalPackage ];
@@ -317,7 +321,7 @@ in
               )
               {
                 text =
-                  (lib.hm.generators.toKDL { } cfg.settings)
+                  (toKDL cfg.settings)
                   + lib.optionalString (cfg.extraConfig != "") (
                     ''
 
@@ -336,9 +340,7 @@ in
               if builtins.isPath value || lib.isStorePath value then
                 value
               else
-                pkgs.writeText "zellij-layout-${name}" (
-                  if lib.isString value then value else lib.hm.generators.toKDL { } value
-                );
+                pkgs.writeText "zellij-layout-${name}" (if lib.isString value then value else toKDL value);
           }
         ) cfg.layouts)
 
@@ -349,9 +351,7 @@ in
               if builtins.isPath value || lib.isStorePath value then
                 value
               else
-                pkgs.writeText "zellij-theme-${name}" (
-                  if lib.isString value then value else lib.hm.generators.toKDL { } value
-                );
+                pkgs.writeText "zellij-theme-${name}" (if lib.isString value then value else toKDL value);
           }
         ) cfg.themes)
 
@@ -394,17 +394,23 @@ in
       };
 
       programs.bash.initExtra = mkIf cfg.enableBashIntegration ''
-        eval "$(${lib.getExe cfg.finalPackage} setup --generate-auto-start bash)"
+        if [[ "$TERM" != "dumb" ]]; then
+            eval "$(${lib.getExe cfg.finalPackage} setup --generate-auto-start bash)"
+        fi
       '';
 
       programs.zsh.initContent = mkIf cfg.enableZshIntegration (
         lib.mkOrder 200 ''
-          eval "$(${lib.getExe cfg.finalPackage} setup --generate-auto-start zsh)"
+          if [[ "$TERM" != "dumb" ]]; then
+              eval "$(${lib.getExe cfg.finalPackage} setup --generate-auto-start zsh)"
+          fi
         ''
       );
 
       programs.fish.interactiveShellInit = mkIf cfg.enableFishIntegration ''
-        eval (${lib.getExe cfg.finalPackage} setup --generate-auto-start fish | string collect)
+        if test "$TERM" != "dumb"
+            eval (${lib.getExe cfg.finalPackage} setup --generate-auto-start fish | string collect)
+        end
       '';
 
       home.sessionVariables = mkIf shellIntegrationEnabled {

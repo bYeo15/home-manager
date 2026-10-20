@@ -8,6 +8,9 @@
 let
   cfg = config.programs.antigravity-cli;
 
+  useGeminiConfig =
+    cfg.useLegacyGeminiConfig || (cfg.package != null && lib.getName cfg.package == "gemini-cli");
+
   renamedGeminiOptions = [
     "commands"
     "context"
@@ -32,20 +35,100 @@ let
 
   transformMcpServer =
     server:
-    removeAttrs server [
-      "httpUrl"
-      "url"
-    ]
-    // lib.optionalAttrs (server ? httpUrl) {
-      serverUrl = server.httpUrl;
-    }
-    // lib.optionalAttrs (server ? url) {
-      serverUrl = server.url;
-    };
+    let
+      isRemote =
+        (server.httpUrl or null) != null
+        || (server.url or null) != null
+        || (server.serverUrl or null) != null;
+      cleaned =
+        if isRemote then
+          removeAttrs server [
+            "command"
+            "args"
+            "env"
+          ]
+        else
+          server;
+      isDisabled = lib.hm.mcp.resolveEnabled server == false;
+      transformed =
+        removeAttrs cleaned [
+          "httpUrl"
+          "url"
+          "enabled"
+        ]
+        // lib.optionalAttrs (server ? httpUrl) {
+          serverUrl = server.httpUrl;
+        }
+        // lib.optionalAttrs (server ? url) {
+          serverUrl = server.url;
+        }
+        //
+          lib.optionalAttrs (isDisabled || (cfg.mutableSettings && lib.hm.mcp.resolveEnabled server != null))
+            {
+              disabled = isDisabled;
+            };
+    in
+    lib.filterAttrs (_: v: v != null && (cfg.mutableSettings || v != [ ]) && v != { }) transformed;
 
   transformMcpServers = lib.mapAttrs (_name: transformMcpServer);
 
   commandSkillName = lib.replaceStrings [ "/" ] [ ":" ];
+
+  normalizeSkillsDirectory =
+    source:
+    if lib.isPath source then
+      source
+    else
+      pkgs.runCommandLocal "antigravity-cli-skills" { } ''
+        if [[ ! -d ${lib.escapeShellArg (toString source)} ]]; then
+          echo ${lib.escapeShellArg "programs.antigravity-cli.skills must be a directory"} >&2
+          exit 1
+        fi
+        ln -s ${lib.escapeShellArg (toString source)} "$out"
+      '';
+
+  normalizeSkill =
+    source:
+    pkgs.runCommandLocal "antigravity-cli-skill" { } ''
+      source=${lib.escapeShellArg (toString source)}
+      if [[ -d "$source" ]]; then
+        ln -s "$source" "$out"
+      elif [[ -f "$source" ]]; then
+        mkdir "$out"
+        ln -s "$source" "$out/SKILL.md"
+      else
+        echo "Antigravity CLI skill source must be a file or directory: $source" >&2
+        exit 1
+      fi
+    '';
+
+  skillFiles =
+    skillsDir:
+    if lib.hm.strings.isPathLike cfg.skills then
+      {
+        "${skillsDir}" = {
+          source = normalizeSkillsDirectory cfg.skills;
+          recursive = true;
+        };
+      }
+    else
+      lib.mapAttrs' (
+        name: source:
+        if lib.isPath source && lib.pathIsDirectory source then
+          lib.nameValuePair "${skillsDir}/${name}" {
+            inherit source;
+            recursive = true;
+          }
+        else if lib.hm.strings.isPathLike source && !lib.isPath source then
+          lib.nameValuePair "${skillsDir}/${name}" {
+            source = normalizeSkill source;
+            recursive = true;
+          }
+        else
+          lib.nameValuePair "${skillsDir}/${name}/SKILL.md" (
+            if lib.hm.strings.isPathLike source then { inherit source; } else { text = source; }
+          )
+      ) cfg.skills;
 
 in
 {
@@ -74,6 +157,27 @@ in
 
     package = lib.mkPackageOption pkgs "antigravity-cli" {
       nullable = true;
+    };
+
+    mutableSettings = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether to merge native Antigravity settings and MCP servers into
+        writable files during activation. This does not support the legacy
+        Gemini CLI configuration or a Gemini CLI package. Gemini CLI supports
+        a separate read-only system settings layer via
+        {env}`GEMINI_CLI_SYSTEM_SETTINGS_PATH` instead.
+
+        Declared values, including permission arrays, take precedence over
+        existing values. Unset permission lists preserve saved grants; an
+        explicit list replaces the saved list, including an empty list.
+        MCP files accept comments and trailing commas, but
+        are written as JSON without comments or original formatting. Removing
+        a declaration does not remove it from the file. Switching back to
+        immutable settings only removes byte-identical files; changed files
+        require backup or removal.
+      '';
     };
 
     useLegacyGeminiConfig = lib.mkOption {
@@ -138,7 +242,8 @@ in
         {file}`~/.gemini/config/mcp_config.json`.
 
         Remote servers use `serverUrl`; `url` and `httpUrl` are accepted
-        for migration and converted automatically.
+        for migration and converted automatically. `enabled` is accepted
+        and converted to `disabled`.
       '';
     };
 
@@ -196,24 +301,27 @@ in
         lib.types.submodule {
           options = {
             allow = lib.mkOption {
-              type = lib.types.listOf lib.types.str;
-              default = [ ];
+              type = lib.types.nullOr (lib.types.listOf lib.types.str);
+              default = if cfg.mutableSettings && !useGeminiConfig then null else [ ];
+              defaultText = lib.literalMD "`null` in mutable native mode, otherwise `[ ]`.";
               description = ''
                 Permissions to allow without prompting.
               '';
             };
 
             deny = lib.mkOption {
-              type = lib.types.listOf lib.types.str;
-              default = [ ];
+              type = lib.types.nullOr (lib.types.listOf lib.types.str);
+              default = if cfg.mutableSettings && !useGeminiConfig then null else [ ];
+              defaultText = lib.literalMD "`null` in mutable native mode, otherwise `[ ]`.";
               description = ''
                 Permissions to deny without prompting.
               '';
             };
 
             ask = lib.mkOption {
-              type = lib.types.listOf lib.types.str;
-              default = [ ];
+              type = lib.types.nullOr (lib.types.listOf lib.types.str);
+              default = if cfg.mutableSettings && !useGeminiConfig then null else [ ];
+              defaultText = lib.literalMD "`null` in mutable native mode, otherwise `[ ]`.";
               description = ''
                 Permissions to ask before using.
               '';
@@ -225,6 +333,10 @@ in
       description = ''
         Antigravity CLI fine-grained permissions written to
         {option}`programs.antigravity-cli.settings.permissions`.
+        Unspecified lists default to empty lists in immutable and legacy mode.
+        In mutable native mode, unspecified lists default to null instead.
+        Null lists are omitted from the file, preserving saved values in mutable
+        mode; an explicit empty list clears the saved list.
       '';
       example = lib.literalExpression ''
         {
@@ -369,19 +481,31 @@ in
 
   config =
     let
-      useGeminiConfig =
-        cfg.useLegacyGeminiConfig || (cfg.package != null && lib.getName cfg.package == "gemini-cli");
       antigravitySkillsDir = ".gemini/antigravity-cli/skills";
       geminiSkillsDir = ".gemini/skills";
-      antigravitySettings = lib.recursiveUpdate (lib.optionalAttrs (cfg.permissions != null) {
-        inherit (cfg) permissions;
+      permissions = lib.optionalAttrs (cfg.permissions != null) (
+        lib.filterAttrs (_: value: value != null) cfg.permissions
+      );
+      antigravitySettings = lib.recursiveUpdate (lib.optionalAttrs (permissions != { }) {
+        inherit permissions;
       }) (removeAttrs cfg.settings [ "mcpServers" ]);
       legacyMcpServers = lib.optionalAttrs (cfg.settings ? mcpServers) cfg.settings.mcpServers;
       mcpServers = lib.recursiveUpdate legacyMcpServers cfg.mcpServers;
+      json5 = pkgs.python3Packages.toPythonApplication pkgs.python3Packages.json5;
+      nativeSettingsFiles =
+        lib.optionalAttrs (antigravitySettings != { }) {
+          ".gemini/antigravity-cli/settings.json" =
+            jsonFormat.generate "antigravity-cli-settings.json" antigravitySettings;
+        }
+        // lib.optionalAttrs (mcpServers != { }) {
+          ".gemini/config/mcp_config.json" = jsonFormat.generate "antigravity-cli-mcp-config.json" {
+            mcpServers = transformMcpServers mcpServers;
+          };
+        };
       geminiSettings =
         lib.recursiveUpdate
-          (lib.optionalAttrs (cfg.permissions != null) {
-            inherit (cfg) permissions;
+          (lib.optionalAttrs (permissions != { }) {
+            inherit permissions;
           })
           (lib.recursiveUpdate cfg.settings (lib.optionalAttrs (mcpServers != { }) { inherit mcpServers; }));
     in
@@ -407,6 +531,12 @@ in
           ) cfg.context;
         }
         (lib.mkIf useGeminiConfig {
+          assertions = [
+            {
+              assertion = !cfg.mutableSettings;
+              message = "programs.antigravity-cli.mutableSettings only supports native Antigravity CLI configuration, not legacy Gemini CLI configuration.";
+            }
+          ];
           programs.antigravity-cli.settings.mcpServers =
             lib.mkIf (cfg.enableMcpIntegration && config.programs.mcp.enable)
               (
@@ -442,28 +572,7 @@ in
                   if lib.hm.strings.isPathLike v then v else tomlFormat.generate "gemini-cli-policy-${n}.toml" v;
               }
             ) cfg.policies
-            // (
-              if lib.hm.strings.isPathLike cfg.skills then
-                {
-                  "${geminiSkillsDir}" = {
-                    source = cfg.skills;
-                    recursive = true;
-                  };
-                }
-              else
-                lib.mapAttrs' (
-                  n: v:
-                  if lib.hm.strings.isPathLike v && lib.pathIsDirectory v then
-                    lib.nameValuePair "${geminiSkillsDir}/${n}" {
-                      source = v;
-                      recursive = true;
-                    }
-                  else
-                    lib.nameValuePair "${geminiSkillsDir}/${n}/SKILL.md" (
-                      if lib.hm.strings.isPathLike v then { source = v; } else { text = v; }
-                    )
-                ) cfg.skills
-            );
+            // skillFiles geminiSkillsDir;
         })
         (lib.mkIf (!useGeminiConfig) {
           programs.antigravity-cli.mcpServers =
@@ -495,59 +604,65 @@ in
             }
           ];
 
-          home.file =
-            lib.optionalAttrs (antigravitySettings != { }) {
-              ".gemini/antigravity-cli/settings.json".source =
-                jsonFormat.generate "antigravity-cli-settings.json" antigravitySettings;
-            }
-            // lib.optionalAttrs (mcpServers != { }) {
-              ".gemini/config/mcp_config.json".source = jsonFormat.generate "antigravity-cli-mcp-config.json" {
-                mcpServers = transformMcpServers mcpServers;
-              };
-            }
-            // lib.mapAttrs' (
-              n: v:
-              let
-                skillName = commandSkillName n;
-              in
-              lib.nameValuePair "${antigravitySkillsDir}/${skillName}/SKILL.md" {
-                text = ''
-                  ---
-                  name: ${skillName}
-                  description: ${v.description}
-                  ---
+          home = {
+            activation = {
+              antigravitySettings = lib.mkIf (cfg.mutableSettings && nativeSettingsFiles != { }) (
+                lib.hm.dag.entryAfter [ "linkGeneration" ] (
+                  lib.concatStringsSep "\n" (
+                    lib.mapAttrsToList (
+                      name: source:
+                      lib.hm.generators.mkImpureConfigMerger {
+                        inherit pkgs;
+                        format = "json";
+                        empty = "{}";
+                        jqOperation = "$dynamic * $static";
+                        path = "${config.home.homeDirectory}/${name}";
+                        staticSettings = source;
+                        mode = "600";
+                        reader = if name == ".gemini/config/mcp_config.json" then "${lib.getExe json5} --as-json" else null;
+                      }
+                    ) nativeSettingsFiles
+                  )
+                )
+              );
+              antigravityImmutableSettings = lib.mkIf (!cfg.mutableSettings && nativeSettingsFiles != { }) (
+                lib.hm.dag.entryBetween [ "linkGeneration" ] [ "writeBoundary" ] (
+                  lib.concatStringsSep "\n" (
+                    lib.mapAttrsToList (
+                      name: _: lib.hm.generators.mkImpureConfigCleanup { file = config.home.file.${name}; }
+                    ) nativeSettingsFiles
+                  )
+                )
+              );
+            };
 
-                  ${v.prompt}
-                '';
-              }
-            ) cfg.commands
-            // (
-              if lib.hm.strings.isPathLike cfg.skills then
-                {
-                  "${antigravitySkillsDir}" = {
-                    source = cfg.skills;
-                    recursive = true;
-                  };
+            file =
+              lib.optionalAttrs (!cfg.mutableSettings) (
+                lib.mapAttrs (_: source: { inherit source; }) nativeSettingsFiles
+              )
+              // lib.mapAttrs' (
+                n: v:
+                let
+                  skillName = commandSkillName n;
+                in
+                lib.nameValuePair "${antigravitySkillsDir}/${skillName}/SKILL.md" {
+                  text = ''
+                    ---
+                    name: ${skillName}
+                    description: ${v.description}
+                    ---
+
+                    ${v.prompt}
+                  '';
                 }
-              else
-                lib.mapAttrs' (
-                  n: v:
-                  if lib.hm.strings.isPathLike v && lib.pathIsDirectory v then
-                    lib.nameValuePair "${antigravitySkillsDir}/${n}" {
-                      source = v;
-                      recursive = true;
-                    }
-                  else
-                    lib.nameValuePair "${antigravitySkillsDir}/${n}/SKILL.md" (
-                      if lib.hm.strings.isPathLike v then { source = v; } else { text = v; }
-                    )
-                ) cfg.skills
-            );
+              ) cfg.commands
+              // skillFiles antigravitySkillsDir;
+          };
         })
         {
           assertions = [
             {
-              assertion = !lib.hm.strings.isPathLike cfg.skills || lib.pathIsDirectory cfg.skills;
+              assertion = !lib.isPath cfg.skills || lib.pathIsDirectory cfg.skills;
               message = "`programs.antigravity-cli.skills` must be a directory when set to a path";
             }
           ];

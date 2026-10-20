@@ -213,8 +213,8 @@ in
 
       waylandSupport = mkOption {
         type = types.bool;
-        default = pkgs.stdenv.isLinux;
-        defaultText = literalExpression "pkgs.stdenv.isLinux";
+        default = pkgs.stdenv.hostPlatform.isLinux;
+        defaultText = literalExpression "pkgs.stdenv.hostPlatform.isLinux";
         description = ''
           Whether to enable Wayland clipboard support.
         '';
@@ -347,7 +347,7 @@ in
           example = literalExpression ''
             with pkgs.vimPlugins;
             [
-              yankring
+              YankRing-vim
               vim-nix
               { plugin = vim-startify;
                 config = "let g:startify_change_to_vcs_root = 0";

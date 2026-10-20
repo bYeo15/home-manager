@@ -567,45 +567,19 @@ in
   meta.maintainers = [ lib.maintainers.rycee ];
 
   imports =
-    let
-      oldPrefix = [
-        "programs"
-        "ssh"
-      ];
-      newPrefix = [
-        "programs"
-        "ssh"
-        "settings"
-        "*"
-      ];
-      renamedOptions = [
-        "forwardAgent"
-        "addKeysToAgent"
-        "compression"
-        "serverAliveInterval"
-        "serverAliveCountMax"
-        "hashKnownHosts"
-        "userKnownHostsFile"
-        "controlMaster"
-        "controlPath"
-        "controlPersist"
-      ];
-      oldOptionNameToSetting = {
-        forwardAgent = "ForwardAgent";
-        addKeysToAgent = "AddKeysToAgent";
-        compression = "Compression";
-        serverAliveInterval = "ServerAliveInterval";
-        serverAliveCountMax = "ServerAliveCountMax";
-        hashKnownHosts = "HashKnownHosts";
-        userKnownHostsFile = "UserKnownHostsFile";
-        controlMaster = "ControlMaster";
-        controlPath = "ControlPath";
-        controlPersist = "ControlPersist";
+    lib.mapAttrsToList (name: message: lib.mkRemovedOptionModule [ "programs" "ssh" name ] message)
+      {
+        addKeysToAgent = "Use `programs.ssh.settings.\"*\".AddKeysToAgent` instead.";
+        compression = "Use `programs.ssh.settings.\"*\".Compression` instead.";
+        controlMaster = "Use `programs.ssh.settings.\"*\".ControlMaster` instead.";
+        controlPath = "Use `programs.ssh.settings.\"*\".ControlPath` instead.";
+        controlPersist = "Use `programs.ssh.settings.\"*\".ControlPersist` instead.";
+        forwardAgent = "Use `programs.ssh.settings.\"*\".ForwardAgent` instead.";
+        hashKnownHosts = "Use `programs.ssh.settings.\"*\".HashKnownHosts` instead.";
+        serverAliveCountMax = "Use `programs.ssh.settings.\"*\".ServerAliveCountMax` instead.";
+        serverAliveInterval = "Use `programs.ssh.settings.\"*\".ServerAliveInterval` instead.";
+        userKnownHostsFile = "Use `programs.ssh.settings.\"*\".UserKnownHostsFile` instead.";
       };
-    in
-    lib.hm.deprecations.mkSettingsRenamedOptionModules oldPrefix newPrefix {
-      transform = x: oldOptionNameToSetting.${x};
-    } renamedOptions;
 
   options.programs.ssh = {
     enable = lib.mkEnableOption "SSH client configuration";
@@ -678,13 +652,29 @@ in
       );
       default = { };
       example = literalExpression ''
-        {
-          "github.com" = {
-            HostName = "github.com";
+        # Tagged hosts must appear before Match blocks that select those tags.
+        lib.hm.dag.entriesBefore "corp-host" [ "corp-match" ] [
+          {
+            header = "Host build.corp";
+            HostName = "build.corp.example.org";
+            User = "builder";
+            Tag = "corp";
+          }
+
+          {
+            header = "Host git.corp";
+            HostName = "git.corp.example.org";
             User = "git";
-            IdentityFile = "~/.ssh/github";
+            Tag = "corp";
+          }
+        ]
+        // {
+          # Bare attribute names become Host patterns.
+          "*.internal.example.org" = {
+            User = "internal";
           };
 
+          # Literal Host headers can use the full OpenSSH syntax.
           "Host *.example.org" = lib.hm.dag.entryBefore [ "github.com" ] {
             IdentityFile = "~/.ssh/example";
             LocalForward = [
@@ -698,7 +688,20 @@ in
             DynamicForward = "127.0.0.1:1080";
           };
 
-          "Match host *.corp exec \"test -f ~/.corp\"" = {
+          # Literal Match headers can be ordered by their attribute name.
+          "Match host *.vpn.example.org" = lib.hm.dag.entryAfter [ "github.com" ] {
+            ProxyJump = "vpn";
+          };
+
+          "github.com" = {
+            HostName = "github.com";
+            User = "git";
+            IdentityFile = "~/.ssh/github";
+          };
+
+          # Keep long or dynamic SSH headers out of DAG references.
+          corp-match = lib.hm.dag.entryAfter [ "github.com" ] {
+            header = "Match tagged corp exec \"test -f ~/.corp\"";
             ProxyJump = "bastion";
             RemoteForward = {
               bind.port = 8081;
@@ -707,6 +710,13 @@ in
             };
           };
         }
+        # Generated groups can also be placed after named blocks.
+        // lib.hm.dag.entriesAfter "corp-fallback" [ "corp-match" ] [
+          {
+            header = "Host *.corp";
+            User = "corp";
+          }
+        ]
       '';
       description = ''
         OpenSSH client configuration blocks written to
@@ -716,7 +726,10 @@ in
         start with `Host ` or `Match `, in which case they are written
         literally as block headers. If the order of rules matter then
         use the DAG functions to express the dependencies as shown in
-        the example.
+        the example. Use {option}`programs.ssh.settings.<name>.header`
+        when the block should have a short stable name for DAG ordering,
+        and use `lib.hm.dag.entriesBefore` or
+        `lib.hm.dag.entriesAfter` to order generated groups of blocks.
 
         See
         {manpage}`ssh_config(5)`

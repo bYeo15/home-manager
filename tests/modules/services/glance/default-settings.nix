@@ -18,6 +18,13 @@
       serviceFile=$(normalizeStorePaths $serviceFile)
       assertFileExists "$serviceFile"
       assertFileContent "$serviceFile" ${./glance.plist}
+
+      domainFile=LaunchAgentDomains/org.nix-community.home.glance.domain
+      assertFileContent "$domainFile" ${builtins.toFile "expected-domain" "gui\n"}
+
+      triggersFile=LaunchAgentRestartTriggers/org.nix-community.home.glance.json
+      triggersFile=$(normalizeStorePaths $triggersFile)
+      assertFileContent "$triggersFile" ${./glance-restart-triggers.json}
     '')
   ];
 }

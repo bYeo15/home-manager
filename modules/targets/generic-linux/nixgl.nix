@@ -115,7 +115,7 @@ in
       description = ''
         If this option is set, the wrapper script `prime-offload` is installed
         into the environment. It allows starting programs on the secondary GPU
-        selected by the `nixGL.prime.card` option. This makes sense when the
+        selected by the {option}`targets.genericLinux.nixGL.prime.card` option. This makes sense when the
         program is not already using one of nixGL PRIME wrappers, or for
         programs not installed from Nixpkgs.
 
@@ -303,7 +303,9 @@ in
             # wouldn't know what to do with them. So, we rewrite the override
             # function to instead forward the arguments to the package's own
             # override function.
-            override = args: makePackageWrapper vendor environment (pkg.override args);
+            override = lib.setFunctionArgs (args: makePackageWrapper vendor environment (pkg.override args)) (
+              lib.functionArgs (pkg.override or (_: { }))
+            );
           };
 
       # Note, if you add/remove/alter attribute names here you need to make a

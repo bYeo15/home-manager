@@ -271,10 +271,9 @@ let
                   (listOf str)
                 ]);
             in
-            origin
+            types.addCheck origin (x: if !config.erase && isNull x then false else origin.check x)
             // {
               description = "string or list of string (optional when erase is set to true)";
-              check = x: if !config.erase && isNull x then false else origin.check x;
             };
           default = null;
         };
@@ -658,17 +657,21 @@ in
                 ++ lib.filter (p: p != null) (
                   map (outName: package.${outName} or null) config.home.extraOutputsToInstall
                 );
-                nativeBuildInputs = [ pkgs.python3 ];
-                buildInputs = [ cfg.package ];
+                nativeBuildInputs = [
+                  pkgs.python3
+                  cfg.package
+                ];
                 preferLocalBuild = true;
               }
               ''
+                # The generator script is embedded in the fish binary, so extract it.
+                generator=$PWD/create_manpage_completions.py
+                fish --no-config -c 'status get-file tools/create_manpage_completions.py' > "$generator"
+
                 mkdir -p $out
                 for src in $srcs; do
                   if [ -d $src/share/man ]; then
-                    find -L $src/share/man -type f \
-                      -exec python ${cfg.package}/share/fish/tools/create_manpage_completions.py --directory $out {} + \
-                      > /dev/null
+                    find -L $src/share/man -type f -exec python "$generator" --directory $out {} + > /dev/null
                   fi
                 done
               '';
@@ -681,7 +684,7 @@ in
         in
         {
           # Support completion for `man` by building a cache for `apropos`.
-          programs.man.generateCaches = lib.mkDefault true;
+          programs.man.generateCaches = lib.mkIf (config.programs.man.package != null) (lib.mkDefault true);
 
           xdg.dataFile."fish/home-manager/generated_completions".source =
             let
@@ -703,11 +706,12 @@ in
                     // {
                       # pass the defaults
                       inherit preferLocalBuild allowSubstitutes;
+                      passAsFile = [ "paths" ];
                     };
                 in
                 pkgs.runCommand name args ''
                   mkdir -p $out
-                  for i in $paths; do
+                  for i in $(cat $pathsPath); do
                     if [ -z "$(find $i -prune -empty)" ]; then
                       cp -srf $i/* $out
                     fi

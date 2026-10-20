@@ -1,7 +1,7 @@
 {
   description = "Home Manager for Nix";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
 
   outputs =
     {
@@ -49,13 +49,12 @@
           "aarch64-darwin"
           "aarch64-linux"
           "i686-linux"
-          "x86_64-darwin"
           "x86_64-linux"
         ];
 
         forSystems = systems: f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-        forAllPkgs = forSystems nixpkgs.lib.systems.flakeExposed;
+        forAllPkgs = forSystems (nixpkgs.lib.remove "x86_64-darwin" nixpkgs.lib.systems.flakeExposed);
 
         forSupportedPkgs = forSystems supportedSystems;
 
@@ -63,6 +62,17 @@
           "aarch64-darwin"
           "x86_64-linux"
         ];
+
+        warn = builtins.warn or nixpkgs.lib.warn;
+
+        releaseInfo = nixpkgs.lib.importJSON ./release.json;
+
+        docsFor =
+          pkgs:
+          import ./docs {
+            inherit pkgs;
+            inherit (releaseInfo) release isReleaseBranch;
+          };
 
         testChunks =
           system:
@@ -168,10 +178,11 @@
       {
         formatter = forSupportedPkgs (pkgs: pkgs.callPackage ./home-manager/formatter.nix { });
 
-        # TODO: increase buildbot testing scope
-        buildbot = forCI (
+        # TODO: increase nixbot testing scope
+        nixbot = forCI (
           system:
           let
+            docs = docsFor nixpkgs.legacyPackages.${system};
             allIntegrationTests = integrationTests system;
             workingIntegrationTests = nixpkgs.lib.filterAttrs (
               name: _:
@@ -181,17 +192,27 @@
               ]
             ) allIntegrationTests;
           in
-          (testChunks system) // workingIntegrationTests
+          (testChunks system)
+          // workingIntegrationTests
+          // {
+            docs-html = docs.manual.html;
+            docs-json = docs.options.json;
+            docs-jsonModuleMaintainers = docs.jsonModuleMaintainers;
+            docs-manpages = docs.manPages;
+          }
+        );
+
+        # Alias for nixbot, added 2026-07-30
+        buildbot = forCI (
+          system:
+          warn "Home Manager: `buildbot.${system}` has been renamed to `nixbot.${system}`."
+            self.nixbot.${system}
         );
 
         packages = forAllPkgs (
           pkgs:
           let
-            releaseInfo = nixpkgs.lib.importJSON ./release.json;
-            docs = import ./docs {
-              inherit pkgs;
-              inherit (releaseInfo) release isReleaseBranch;
-            };
+            docs = docsFor pkgs;
             hmPkg = pkgs.callPackage ./home-manager { path = "${self}"; };
           in
           {

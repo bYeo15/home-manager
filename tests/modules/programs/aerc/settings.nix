@@ -4,7 +4,7 @@
     nmt.script =
       let
         dir =
-          if (pkgs.stdenv.isDarwin && !config.xdg.enable) then
+          if (pkgs.stdenv.hostPlatform.isDarwin && !config.xdg.enable) then
             "home-files/Library/Preferences/aerc"
           else
             "home-files/.config/aerc";
@@ -308,6 +308,10 @@
               postpone = "dRaFts";
             };
           };
+        };
+        q_notmuch = basics // {
+          notmuch.enable = true;
+          maildir.path = "custom-notmuch";
         };
       };
   };

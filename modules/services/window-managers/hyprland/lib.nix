@@ -51,8 +51,6 @@ let
   luaLocalName = name: value: value.name or name;
 
   hasNonStringValue = values: lib.any (value: !isString value) values;
-
-  isPathLike = value: lib.isPath value || lib.isStorePath value;
 in
 {
   inherit
@@ -108,6 +106,7 @@ in
       text =
         optionalString config.systemd.enable ''
           exec-once = ${systemdActivationCommand}
+          exec-shutdown = systemctl --user stop hyprland-session.target
         ''
         + optionalString (config.plugins != [ ]) (pluginsToHyprconf config.plugins)
         + optionalString (config.settings != { }) (
@@ -128,9 +127,11 @@ in
       xdgConfigHome,
     }:
     let
-      pluginLoadCommands = map (entry: "hyprctl plugin load ${pluginPath entry}") config.plugins;
-      startupCommands =
-        lib.optionals config.systemd.enable [ systemdActivationCommand ] ++ pluginLoadCommands;
+      renderPluginLoad = renderSection "plugins" (
+        concatMapStrings (entry: "hl.plugin.load(${toLua (pluginPath entry)})\n") config.plugins
+      );
+
+      startupCommands = lib.optionals config.systemd.enable [ systemdActivationCommand ];
 
       renderSettings =
         let
@@ -168,6 +169,14 @@ in
             hl.on("hyprland.start", function()
             ${concatMapStrings (command: "  hl.exec_cmd(${toLua command})\n") startupCommands}end)
           '';
+
+      renderShutdownHook = optionalString config.systemd.enable (
+        renderSection "shutdown" ''
+          hl.on("hyprland.shutdown", function()
+            os.execute("systemctl --user stop hyprland-session.target && sleep 0.1")
+          end)
+        ''
+      );
 
       renderLuaFiles =
         let
@@ -225,10 +234,12 @@ in
         -- See https://wiki.hypr.land/Configuring/Start/
 
       ''
+      + renderPluginLoad
       + renderLuaFiles
       + renderSettings
       + renderSubmaps
       + renderStartHook
+      + renderShutdownHook
       + renderSection "extraConfig" config.extraConfig;
 
       onChange = lib.mkIf (config.package != null) reloadConfig;
@@ -237,7 +248,10 @@ in
   extraLuaFiles = lib.mapAttrs' (
     name: file:
     lib.nameValuePair "hypr/${luaFileName name}" (
-      if isPathLike file.content then { source = file.content; } else { text = file.content; }
+      if lib.hm.strings.isPathLike file.content then
+        { source = file.content; }
+      else
+        { text = file.content; }
     )
   ) config.extraLuaFiles;
 }

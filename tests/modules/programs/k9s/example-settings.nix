@@ -6,7 +6,7 @@
 }:
 
 {
-  xdg.enable = lib.mkIf pkgs.stdenv.isDarwin false;
+  xdg.enable = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin false;
 
   programs.k9s = {
     enable = true;
@@ -78,6 +78,12 @@
         ];
       };
     };
+    jumps = {
+      "argoproj.io/v1alpha1/applications" = {
+        targetGVR = "apps/v1/deployments";
+        labelSelector = "app.kubernetes.io/instance={{.metadata.name}}";
+      };
+    };
     views = {
       "v1/pods" = {
         columns = [
@@ -95,7 +101,8 @@
 
   nmt.script =
     let
-      configDir = if !pkgs.stdenv.isDarwin then ".config/k9s" else "Library/Application Support/k9s";
+      configDir =
+        if !pkgs.stdenv.hostPlatform.isDarwin then ".config/k9s" else "Library/Application Support/k9s";
     in
     ''
       assertFileExists "home-files/${configDir}/config.yaml"
@@ -124,6 +131,9 @@
       assertFileContent \
         "home-files/${configDir}/plugins.yaml" \
         ${./example-plugins-expected.yaml}
+      assertFileContent \
+        "home-files/${configDir}/jumps.yaml" \
+        ${./example-jumps-expected.yaml}
       assertFileExists "home-files/${configDir}/views.yaml"
       assertFileContent \
         "home-files/${configDir}/views.yaml" \

@@ -58,7 +58,7 @@ in
   config =
     let
       socketPath =
-        if pkgs.stdenv.isDarwin then
+        if pkgs.stdenv.hostPlatform.isDarwin then
           "$(${lib.getExe pkgs.getconf} DARWIN_USER_TEMP_DIR)/${cfg.socket}"
         else
           "$XDG_RUNTIME_DIR/${cfg.socket}";
@@ -67,7 +67,7 @@ in
         "ssh-agent"
         "start"
         "--socket-path"
-        "${if pkgs.stdenv.isDarwin then socketPath else "%t/${cfg.socket}"}"
+        "${if pkgs.stdenv.hostPlatform.isDarwin then socketPath else "%t/${cfg.socket}"}"
       ]
       ++ cfg.extraArgs;
     in
@@ -80,7 +80,7 @@ in
           bash = ''export SSH_AUTH_SOCK="${socketPath}"'';
           fish = ''set -x SSH_AUTH_SOCK "${socketPath}"'';
           nushell = "$env.SSH_AUTH_SOCK = ${
-            if pkgs.stdenv.isDarwin then
+            if pkgs.stdenv.hostPlatform.isDarwin then
               ''$"(${lib.getExe pkgs.getconf} DARWIN_USER_TEMP_DIR)/${cfg.socket}"''
             else
               ''$"($env.XDG_RUNTIME_DIR)/${cfg.socket}"''
@@ -94,10 +94,15 @@ in
         Unit = {
           Description = "Proton Pass SSH agent";
           Documentation = "https://protonpass.github.io/pass-cli/commands/ssh-agent/#ssh-agent-integration";
+          # Retry forever: the agent exits as long as `pass-cli login` has not
+          # been run, which would otherwise exhaust systemd's start rate limit
+          # and leave the unit dead until it is restarted manually.
+          StartLimitIntervalSec = 0;
         };
         Service = {
           ExecStart = lib.concatStringsSep " " cmd;
           Restart = "on-failure";
+          RestartSec = 10;
           KeyringMode = "shared";
         };
       };

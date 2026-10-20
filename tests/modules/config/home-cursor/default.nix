@@ -5,8 +5,55 @@ let
       echo test > $out/share/icons/catppuccin-macchiato-blue-cursors/index.theme
     '';
   };
+
+  cursorSwayTest =
+    { name, expected }:
+    { config, lib, ... }:
+    {
+      home.pointerCursor = {
+        enable = true;
+        package = config.lib.test.mkStubPackage package;
+        inherit name;
+        size = 64;
+        sway.enable = true;
+      };
+
+      wayland.windowManager.sway = {
+        enable = true;
+        package = null;
+        checkConfig = false;
+      };
+
+      nmt.script = ''
+        assertFileExists home-files/.config/sway/config
+        assertFileContains home-files/.config/sway/config ${lib.escapeShellArg expected}
+      '';
+    };
 in
 {
+  home-cursor-sway-simple = cursorSwayTest {
+    name = "Vanilla-DMZ";
+    expected = ''xcursor_theme "Vanilla-DMZ" 64'';
+  };
+  home-cursor-sway-spaces = cursorSwayTest {
+    name = "Capitaine Cursors (Gruvbox)";
+    expected = ''xcursor_theme "Capitaine Cursors (Gruvbox)" 64'';
+  };
+  home-cursor-sway-escaped = cursorSwayTest {
+    name = "Theme \"Quoted\" \\ Variant";
+    expected = ''xcursor_theme "Theme \"Quoted\" \\ Variant" 64'';
+  };
+  home-cursor-no-config = {
+    nmt.script = ''
+      assertPathNotExists home-path/share/icons/catppuccin-macchiato-blue-cursors/index.theme
+
+      hmEnvFile=home-path/etc/profile.d/hm-session-vars.sh
+      assertFileExists $hmEnvFile
+      assertFileNotRegex $hmEnvFile 'XCURSOR_THEME="catppuccin-macchiato-blue-standard"'
+      assertFileNotRegex $hmEnvFile 'XCURSOR_SIZE="64"'
+    '';
+  };
+
   # Ensure backwards compatibility with existing configs
   home-cursor-legacy =
     { config, ... }:
@@ -17,11 +64,19 @@ in
           package = config.lib.test.mkStubPackage package;
           size = 64;
           gtk.enable = true;
-          hyprcursor.enable = true;
           x11.enable = true;
         };
 
         home.stateVersion = "24.11";
+
+        test.asserts.warnings.expected = [
+          ''
+            Relying on `home.pointerCursor` to enable cursor config generation is deprecated.
+            Please update your configuration to explicitly set:
+
+              home.pointerCursor.enable = true;
+          ''
+        ];
 
         nmt.script = ''
           assertFileExists home-path/share/icons/catppuccin-macchiato-blue-cursors/index.theme
@@ -30,39 +85,9 @@ in
           assertFileExists $hmEnvFile
           assertFileRegex $hmEnvFile 'XCURSOR_THEME="catppuccin-macchiato-blue-standard"'
           assertFileRegex $hmEnvFile 'XCURSOR_SIZE="64"'
-          assertFileRegex $hmEnvFile 'HYPRCURSOR_THEME="catppuccin-macchiato-blue-standard"'
-          assertFileRegex $hmEnvFile 'HYPRCURSOR_SIZE="64"'
         '';
       };
     };
-
-  home-cursor-legacy-disabled = {
-    config = {
-      home.pointerCursor = null;
-
-      home.stateVersion = "24.11";
-
-      test.asserts.warnings.expected = [
-        ''
-          Setting home.pointerCursor to null is deprecated.
-          Please update your configuration to explicitly set:
-
-            home.pointerCursor.enable = false;
-        ''
-      ];
-
-      nmt.script = ''
-        assertPathNotExists home-path/share/icons/catppuccin-macchiato-blue-cursors/index.theme
-
-        hmEnvFile=home-path/etc/profile.d/hm-session-vars.sh
-        assertFileExists $hmEnvFile
-        assertFileNotRegex $hmEnvFile 'XCURSOR_THEME="catppuccin-macchiato-blue-standard"'
-        assertFileNotRegex $hmEnvFile 'XCURSOR_SIZE="32"'
-        assertFileNotRegex $hmEnvFile 'HYPRCURSOR_THEME="catppuccin-macchiato-blue-standard"'
-        assertFileNotRegex $hmEnvFile 'HYPRCURSOR_SIZE="32"'
-      '';
-    };
-  };
 
   home-cursor-legacy-disabled-with-enable =
     { config, ... }:

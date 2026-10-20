@@ -15,6 +15,24 @@ let
 
   cfg = config.programs.opencode;
   webCfg = cfg.web;
+  hasSettings = cfg.settings != { } || transformedMcpServers != { };
+  settingsPath = "opencode/${if cfg.mutableSettings then "home-manager.json" else "opencode.json"}";
+  tuiPath = "opencode/${if cfg.mutableSettings then "home-manager-tui.json" else "tui.json"}";
+  effectiveFile = path: config.home.file."${config.xdg.configHome}/${path}";
+  absoluteTarget =
+    path:
+    let
+      inherit ((effectiveFile path)) target;
+    in
+    if lib.hasPrefix "/" target then target else "${config.home.homeDirectory}/${target}";
+  mutableEnvironment = lib.optionalAttrs cfg.mutableSettings (
+    lib.optionalAttrs (hasSettings && (effectiveFile settingsPath).enable) {
+      OPENCODE_CONFIG = absoluteTarget settingsPath;
+    }
+    // lib.optionalAttrs (cfg.tui != { } && (effectiveFile tuiPath).enable) {
+      OPENCODE_TUI_CONFIG = absoluteTarget tuiPath;
+    }
+  );
 
   jsonFormat = pkgs.formats.json { };
 
@@ -63,13 +81,54 @@ let
         preferLocalBuild = true;
         nativeBuildInputs = [ pkgs.makeWrapper ];
         postBuild = ''
-          wrapProgram $out/bin/opencode \
+          wrapProgram $out/bin/${cfg.package.meta.mainProgram} \
             --suffix PATH : ${lib.makeBinPath cfg.extraPackages}
         '';
       }
     else
       cfg.package;
 
+  normalizeDirectory =
+    name: source:
+    if lib.isPath source then
+      source
+    else
+      pkgs.runCommandLocal name { } ''
+        if [[ ! -d ${lib.escapeShellArg (toString source)} ]]; then
+          echo ${lib.escapeShellArg "programs.opencode.skills must be a directory"} >&2
+          exit 1
+        fi
+        ln -s ${lib.escapeShellArg (toString source)} "$out"
+      '';
+
+  normalizeSkill =
+    source:
+    pkgs.runCommandLocal "opencode-skill" { } ''
+      source=${lib.escapeShellArg (toString source)}
+      if [[ -d "$source" ]]; then
+        ln -s "$source" "$out"
+      elif [[ -f "$source" ]]; then
+        mkdir "$out"
+        ln -s "$source" "$out/SKILL.md"
+      else
+        echo "OpenCode skill source must be a file or directory: $source" >&2
+        exit 1
+      fi
+    '';
+
+  webProgramArguments = [
+    (lib.getExe packageWithExtraPackages)
+    "serve"
+  ]
+  ++ webCfg.extraArgs;
+
+  opencodeWebLauncher = pkgs.writeShellScriptBin "opencode-web-launcher" ''
+    ${lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (name: value: "export ${name}=${lib.escapeShellArg value}") mutableEnvironment
+    )}
+    export PATH="${config.home.profileDirectory}/bin''${PATH:+:$PATH}"
+    exec ${lib.escapeShellArgs webProgramArguments}
+  '';
 in
 {
   meta.maintainers = with lib.maintainers; [ delafthi ];
@@ -82,6 +141,35 @@ in
     enable = mkEnableOption "opencode";
 
     package = mkPackageOption pkgs "opencode" { nullable = true; };
+
+    mutableSettings = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      example = true;
+      description = ''
+        Whether to leave {file}`$XDG_CONFIG_HOME/opencode/opencode.json` and
+        {file}`$XDG_CONFIG_HOME/opencode/tui.json` writable by OpenCode.
+
+        When enabled, declarative settings and TUI settings are written to
+        {file}`$XDG_CONFIG_HOME/opencode/home-manager.json` and
+        {file}`$XDG_CONFIG_HOME/opencode/home-manager-tui.json` and loaded through
+        {env}`OPENCODE_CONFIG` and {env}`OPENCODE_TUI_CONFIG`. Declarative settings
+        override global user settings; project settings can still override them.
+        {env}`OPENCODE_TUI_CONFIG` requires OpenCode 1.2.15 or later.
+
+        These variables are set through {option}`home.sessionVariables` and must
+        reach OpenCode launches outside the web service for declarative settings
+        to be loaded. The web service receives them automatically.
+
+        Disabling this option restores Home Manager management of the main files.
+        If OpenCode has created those files, activation reports the normal file
+        collision; back up or move the app-owned files before switching back.
+        OpenCode can also create {file}`$XDG_CONFIG_HOME/opencode/opencode.jsonc`,
+        which takes precedence over the managed {file}`opencode.json` without
+        causing a collision. Back up and move that file, or reconcile its
+        contents with your declarations, before disabling this option.
+      '';
+    };
 
     extraPackages = mkOption {
       type = with lib.types; listOf package;
@@ -115,6 +203,16 @@ in
       description = ''
         Configuration written to {file}`$XDG_CONFIG_HOME/opencode/opencode.json`.
         See <https://opencode.ai/docs/config/> for the documentation.
+
+        Attribute sets containing ordered `lib.hm.dag.entryBefore` or
+        `lib.hm.dag.entryAfter` values are rendered in topological order, with
+        raw sibling values treated as unordered entries. This is useful for
+        OpenCode permission rules, where the last matching rule wins.
+
+        The `plugin` key accepts a list of plugin references: local paths to
+        plugin directories or files, derivations (e.g. `fetchFromGitHub`),
+        string paths into derivations, or names of external plugins fetched and
+        built by OpenCode.
 
         Note, `"$schema": "https://opencode.ai/config.json"` is automatically added to the configuration.
       '';
@@ -422,10 +520,47 @@ in
         }
       '';
     };
+
+    validateFiles = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          config = lib.mkEnableOption ''
+            the validation of the generated configuration file
+            ({file}`$XDG_CONFIG_HOME/opencode/opencode.json`, or
+            {file}`home-manager.json` when mutable configuration is enabled) against the
+            corresponding OpenCode JSON schema of the configured package using
+            {command}`check-jsonschema`.
+          '';
+          tui = lib.mkEnableOption ''
+            the validation of the generated configuration file
+            ({file}`$XDG_CONFIG_HOME/opencode/tui.json`, or
+            {file}`home-manager-tui.json` when mutable configuration is enabled) against the
+            corresponding OpenCode JSON schema of the configured package using
+            {command}`check-jsonschema`.
+          '';
+        };
+      };
+      default = { };
+      description = ''
+        Whether to validate the generated configuration files
+        ({file}`$XDG_CONFIG_HOME/opencode/opencode.json` and
+        {file}`$XDG_CONFIG_HOME/opencode/tui.json`) against the
+        corresponding OpenCode JSON schemas of the configured package
+        ({option}`programs.opencode.package`, `config.json` and `tui.json`
+        from `passthru.jsonschema`) using {command}`check-jsonschema`.
+        When {option}`programs.opencode.mutableSettings` is enabled,
+        validation applies to the generated {file}`home-manager.json` and
+        {file}`home-manager-tui.json` layers instead of the writable user files.
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
     assertions = [
+      {
+        assertion = (cfg.validateFiles.config || cfg.validateFiles.tui) -> cfg.package != null;
+        message = "`programs.opencode.validateFiles` requires `programs.opencode.package` to be set";
+      }
       {
         assertion = !lib.isPath cfg.commands || lib.pathIsDirectory cfg.commands;
         message = "`programs.opencode.commands` must be a directory when set to a path";
@@ -439,7 +574,7 @@ in
         message = "`programs.opencode.tools` must be a directory when set to a path";
       }
       {
-        assertion = !lib.hm.strings.isPathLike cfg.skills || lib.pathIsDirectory cfg.skills;
+        assertion = !lib.isPath cfg.skills || lib.pathIsDirectory cfg.skills;
         message = "`programs.opencode.skills` must be a directory when set to a path";
       }
       {
@@ -460,7 +595,7 @@ in
         ) (lib.attrNames cfg.settings);
 
         packageVersion = if cfg.package != null then lib.getVersion cfg.package else null;
-        hasTuiConfig = lib.versionAtLeast packageVersion "1.2.15";
+        hasTuiConfig = packageVersion == null || lib.versionAtLeast packageVersion "1.2.15";
       in
       lib.optionals (hasTuiConfig && deprecatedConfigKeys != [ ]) [
         ''
@@ -473,10 +608,16 @@ in
         ''
       ];
 
-    home.packages = mkIf (packageWithExtraPackages != null) [ packageWithExtraPackages ];
+    home = {
+      packages = mkIf (packageWithExtraPackages != null) [ packageWithExtraPackages ];
+
+      sessionVariables = lib.mapAttrs (
+        _: value: lib.escape [ "\\" "\"" "$" "`" ] value
+      ) mutableEnvironment;
+    };
 
     xdg.configFile = {
-      "opencode/opencode.json" = mkIf (cfg.settings != { } || transformedMcpServers != { }) {
+      "${settingsPath}" = mkIf hasSettings {
         source =
           let
             # Merge MCP servers: transformed servers + user settings, with user settings taking precedence
@@ -484,8 +625,12 @@ in
             # Merge all settings
             mergedSettings =
               cfg.settings // (lib.optionalAttrs (mergedMcpServers != { }) { mcp = mergedMcpServers; });
+            orderedJsonFormat = lib.hm.generators.mkDAGOrderedJsonFormat {
+              inherit pkgs jsonFormat;
+              schema = if cfg.validateFiles.config then cfg.package.passthru.jsonschema.config else null;
+            };
           in
-          jsonFormat.generate "opencode.json" (
+          orderedJsonFormat.generate "opencode.json" (
             {
               "$schema" = "https://opencode.ai/config.json";
             }
@@ -493,14 +638,22 @@ in
           );
       };
 
-      "opencode/tui.json" = mkIf (cfg.tui != { }) {
-        source = jsonFormat.generate "tui.json" (
-          {
-            "$schema" = "https://opencode.ai/tui.json";
-          }
-          // cfg.tui
-        );
-      };
+      "${tuiPath}" = mkIf (cfg.tui != { }) (
+        let
+          orderedJsonFormat = lib.hm.generators.mkDAGOrderedJsonFormat {
+            inherit pkgs jsonFormat;
+            schema = if cfg.validateFiles.tui then cfg.package.passthru.jsonschema.tui else null;
+          };
+        in
+        {
+          source = orderedJsonFormat.generate "tui.json" (
+            {
+              "$schema" = "https://opencode.ai/tui.json";
+            }
+            // cfg.tui
+          );
+        }
+      );
 
       "opencode/AGENTS.md" = (
         if lib.isPath cfg.context then
@@ -527,7 +680,7 @@ in
       };
 
       "opencode/skills" = mkIf (lib.hm.strings.isPathLike cfg.skills) {
-        source = cfg.skills;
+        source = normalizeDirectory "opencode-skills" cfg.skills;
         recursive = true;
       };
 
@@ -562,9 +715,14 @@ in
     )
     // lib.mapAttrs' (
       name: content:
-      if lib.hm.strings.isPathLike content && lib.pathIsDirectory content then
+      if lib.isPath content && lib.pathIsDirectory content then
         lib.nameValuePair "opencode/skills/${name}" {
           source = content;
+          recursive = true;
+        }
+      else if lib.hm.strings.isPathLike content && !lib.isPath content then
+        lib.nameValuePair "opencode/skills/${name}" {
+          source = normalizeSkill content;
           recursive = true;
         }
       else
@@ -601,7 +759,7 @@ in
         };
 
         Service = {
-          ExecStart = "${lib.getExe packageWithExtraPackages} serve ${lib.escapeShellArgs webCfg.extraArgs}";
+          ExecStart = lib.getExe opencodeWebLauncher;
           Restart = "always";
           RestartSec = 5;
         }
@@ -621,18 +779,13 @@ in
         config = {
           ProgramArguments =
             let
-              programArguments = [
-                (lib.getExe packageWithExtraPackages)
-                "serve"
-              ]
-              ++ webCfg.extraArgs;
               opencodeLaunchdWrapper = pkgs.writeShellScriptBin "opencode-launchd-wrapper" ''
                 source ${webCfg.environmentFile}
-                ${lib.escapeShellArgs programArguments}
+                exec ${lib.getExe opencodeWebLauncher}
               '';
             in
             if webCfg.environmentFile == null then
-              programArguments
+              [ (lib.getExe opencodeWebLauncher) ]
             else
               [
                 (lib.getExe opencodeLaunchdWrapper)

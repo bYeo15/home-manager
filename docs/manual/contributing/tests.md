@@ -1,9 +1,23 @@
 # Tests {#sec-tests}
 
-Home Manager includes a basic test suite and it is highly recommended to
-include at least one test when adding a module. Tests are typically in
-the form of \"golden tests\" where, for example, a generated
-configuration file is compared to a known correct file.
+A new module should include a focused test that enables it and checks an
+observable result, such as generated configuration, service definitions,
+package installation, or integration wiring. Successful evaluation alone does
+not show that settings reach the application. For stable generated files,
+compare the complete output with a handwritten expected file using
+`assertFileContent`.
+
+Exercise the meaningful branches introduced by the module. These can include
+disabled behavior, empty settings, a null package, and supported platform or
+configuration-location choices. A null-package case should check that
+independently supported configuration remains available. Use the existing
+NMT harness and its package stubbing; only use real packages when the behavior
+being checked needs their contents. Do not add separate evaluations or run
+activation merely to inspect generated output.
+
+NMT checks generated artifacts; it does not start services or run activation.
+When correctness depends on runtime behavior, identify that verification gap
+and use the appropriate existing integration tests or a bounded reproduction.
 
 It is relatively easy to create tests by modeling the existing tests,
 found in the `tests` project directory.
@@ -53,6 +67,13 @@ The `default.nix` file should list all test cases:
   myprogram-empty-settings = ./empty-settings.nix;
 }
 ```
+
+Prefer keeping related assertions in as few test files as practical.
+Exercising several cases in one evaluation keeps the test suite cheaper
+to evaluate and reduces maintenance burden. Split cases into separate
+files when they need incompatible module configuration, platform
+conditions, expected assertion failures, or otherwise cannot share one
+evaluation.
 
 ### Common NMT Assertions {#sec-tests-assertions}
 
@@ -162,6 +183,12 @@ For cross-platform modules that have packages which need to be stubbed on Darwin
 add the package names to `tests/darwinScrublist.nix` to prevent build failures
 during cross-platform test runs.
 
+On Linux, packages are automatically scrubbed by the test infrastructure,
+so tests should normally use the module's default package. Use
+`test.stubs` or `config.lib.test.mkStubPackage` only when the automatic
+scrubbing does not model the behavior that the test needs, such as a
+package with additional files or a non-default executable layout.
+
 ## Using the tests command {#sec-tests-command}
 
 Home Manager provides a convenient `tests` command for discovering and running tests:
@@ -179,15 +206,21 @@ $ nix run .#tests -- alacritty
 # Run a specific test
 $ nix run .#tests -- test-alacritty-empty-settings
 
-# Run integration tests
+# List integration tests
 $ nix run .#tests -- -t -l
 
+# Run all integration tests
+$ nix run .#tests -- -t integration-test-
+
 # Interactive test selection (requires fzf)
-$ python3 tests/tests.py -i
+$ nix run .#tests -- -i
 
 # Pass additional nix build flags
 $ nix run .#tests -- alacritty -- --verbose
 ```
+
+Integration tests are only exposed on Linux. On other platforms, integration
+test discovery may report no matching tests.
 
 ## Manual test commands {#sec-tests-manual}
 
@@ -202,7 +235,7 @@ $ nix-build --pure --option allow-import-from-derivation false tests -A build.al
 in the project root. List all test cases through
 
 ``` shell
-$ nix-build --pure tests --option allow-import-from-derivation false -A list
+$ nix run .#tests -- -l
 ```
 
 and run an individual test, for example `alacritty-empty-settings`,
@@ -217,13 +250,13 @@ and may cause failures. To run against the Nixpkgs from the `flake.lock` file,
 use instead e.g.
 
 ``` shell
-$ nix build --option allow-import-from-derivation false .#test-all
+$ nix build .#test-all
 ```
 
 or
 
 ``` shell
-$ nix build --option allow-import-from-derivation false .#test-alacritty-empty-settings
+$ nix build .#test-alacritty-empty-settings
 ```
 
 Some tests may be marked with `enableLegacyIfd`, those may be run by run with e.g.

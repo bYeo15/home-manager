@@ -16,17 +16,30 @@ let
   cfg = config.programs.github-copilot-cli;
 
   jsonFormat = pkgs.formats.json { };
+  json5 = pkgs.python3Packages.toPythonApplication pkgs.python3Packages.json5;
+
+  # Copilot CLI drops trusted_folders from settings.json and moves
+  # trustedFolders into its own state in config.json, rewriting settings.json
+  # and so replacing a linked file. A merged copy would also outlive its
+  # removal from Nix.
+  trustedFolderKeys = [
+    "trusted_folders"
+    "trustedFolders"
+  ];
+  userSettings = removeAttrs cfg.settings trustedFolderKeys;
+  settingsFile = jsonFormat.generate "github-copilot-cli-settings.json" userSettings;
 
   upstreamConfigDir = "${config.home.homeDirectory}/.copilot";
 
+  # Applied after transformMcpServer so that args = [] is not filtered out.
   forCopilotFormat =
     server:
     let
-      isLocal = server.type == "stdio";
+      isLocal = server.type == "stdio" || server.type == "local";
     in
     server
     // {
-      type = if server.type == "stdio" then "local" else server.type or "local";
+      type = if isLocal then "local" else server.type;
     }
     // lib.optionalAttrs isLocal {
       args = server.args or [ ];
@@ -43,14 +56,15 @@ let
     if cfg.enableMcpIntegration && config.programs.mcp.enable && enabledServers != { } then
       lib.mapAttrs (
         name: server:
-        lib.hm.mcp.transformMcpServer {
-          inherit server;
-          extraTransforms = [
-            lib.hm.mcp.addType
-            (lib.hm.mcp.wrapEnvFilesCommand { inherit pkgs name; })
-            forCopilotFormat
-          ];
-        }
+        forCopilotFormat (
+          lib.hm.mcp.transformMcpServer {
+            inherit server;
+            extraTransforms = [
+              lib.hm.mcp.addType
+              (lib.hm.mcp.wrapEnvFilesCommand { inherit pkgs name; })
+            ];
+          }
+        )
       ) enabledServers
     else
       { };
@@ -59,17 +73,46 @@ let
     transformedMcpServers
     // lib.mapAttrs (
       name: server:
-      lib.hm.mcp.transformMcpServer {
-        inherit server;
-        extraTransforms = [
-          lib.hm.mcp.addType
-          (lib.hm.mcp.wrapEnvFilesCommand {
-            inherit pkgs name;
-          })
-          forCopilotFormat
-        ];
-      }
+      forCopilotFormat (
+        lib.hm.mcp.transformMcpServer {
+          inherit server;
+          extraTransforms = [
+            lib.hm.mcp.addType
+            (lib.hm.mcp.wrapEnvFilesCommand {
+              inherit pkgs name;
+            })
+          ];
+        }
+      )
     ) cfg.mcpServers;
+
+  normalizeDirectory =
+    name: option: source:
+    if lib.isPath source then
+      source
+    else
+      pkgs.runCommandLocal name { } ''
+        if [[ ! -d ${lib.escapeShellArg (toString source)} ]]; then
+          echo ${lib.escapeShellArg "programs.github-copilot-cli.${option} must be a directory"} >&2
+          exit 1
+        fi
+        ln -s ${lib.escapeShellArg (toString source)} "$out"
+      '';
+
+  normalizeSkill =
+    source:
+    pkgs.runCommandLocal "github-copilot-cli-skill" { } ''
+      source=${lib.escapeShellArg (toString source)}
+      if [[ -d "$source" ]]; then
+        ln -s "$source" "$out"
+      elif [[ -f "$source" ]]; then
+        mkdir "$out"
+        ln -s "$source" "$out/SKILL.md"
+      else
+        echo "GitHub Copilot CLI skill source must be a file or directory: $source" >&2
+        exit 1
+      fi
+    '';
 in
 {
   meta.maintainers = [ lib.maintainers.ojsef39 ];
@@ -92,7 +135,7 @@ in
       example = literalExpression ''"''${config.xdg.configHome}/copilot"'';
       description = ''
         Directory holding Copilot CLI configuration files such as
-        {file}`config.json`, {file}`mcp-config.json`,
+        {file}`settings.json`, {file}`mcp-config.json`,
         {file}`lsp-config.json`, and
         {file}`copilot-instructions.md`.
 
@@ -127,13 +170,19 @@ in
       example = {
         model = "claude-sonnet-4-5";
         theme = "default";
-        trusted_folders = [ "/home/user/projects" ];
         renderMarkdown = true;
         autoUpdate = false;
       };
       description = ''
-        Configuration written to {file}`config.json` inside
-        {option}`programs.github-copilot-cli.configDir`.
+        Configuration written to {file}`settings.json` inside
+        {option}`programs.github-copilot-cli.configDir`. See
+        [](#opt-programs.github-copilot-cli.mutableSettings) for how the file
+        is managed. Empty settings leave the file unmanaged.
+
+        Trusted folders (`trusted_folders`, `trustedFolders`) are not user
+        settings: Copilot CLI keeps them in its own state, so they are left
+        out of the file. Use
+        [](#opt-programs.github-copilot-cli.trustedFolders) instead.
 
         Known configuration keys include:
         - `model` — AI model selection
@@ -147,8 +196,7 @@ in
         - `stream` — token-by-token response streaming (default: `true`)
         - `includeCoAuthoredBy` — agent commit attribution (default: `true`)
         - `respectGitignore` — exclude gitignored files from file picker
-        - `trusted_folders` — list of pre-approved directory paths
-        - `allowed_urls`, `denied_urls` — URL allowlists/blocklists
+        - `allowedUrls`, `deniedUrls` — URL allowlists/blocklists
         - `logLevel` — log verbosity
         - `disableAllHooks` — global hook disable toggle
         - `hooks` — inline hook definitions
@@ -156,6 +204,46 @@ in
 
         See <https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference>
         for the documentation.
+      '';
+    };
+
+    mutableSettings = mkOption {
+      type = lib.types.bool;
+      default = false;
+      example = true;
+      description = ''
+        Whether to merge [](#opt-programs.github-copilot-cli.settings) into a
+        writable {file}`settings.json` at activation instead of linking it from
+        the Nix store.
+
+        A store-linked file prevents the CLI from saving settings normally.
+        Versions that replace the file when saving a model or theme replace
+        the link, causing a collision on the next activation.
+
+        When enabled, declared values take precedence over existing values,
+        keys later removed from [](#opt-programs.github-copilot-cli.settings)
+        stay in the file, and comments and formatting are not preserved.
+        Turning the option off links the file again. A merged file is replaced
+        automatically only when it is byte-identical to the declared settings.
+        Other files are left to the normal collision and backup handling.
+        If the remaining settings are empty, the file is left unmanaged.
+      '';
+    };
+
+    trustedFolders = mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = literalExpression ''[ "''${config.home.homeDirectory}/projects" ]'';
+      description = ''
+        Folders Copilot CLI trusts without asking.
+
+        Copilot CLI keeps trusted folders in its own state file,
+        {file}`config.json` inside
+        {option}`programs.github-copilot-cli.configDir`, which it also uses for
+        login and plugin state. These folders are merged into its
+        `trustedFolders` list at activation, and the rest of the file is left
+        alone. Folders trusted from inside Copilot CLI are kept, and removing a
+        folder here does not untrust it.
       '';
     };
 
@@ -195,7 +283,6 @@ in
           context7 = {
             type = "http";
             url = "https://mcp.context7.com/mcp";
-            headers = { CONTEXT7_API_KEY = "YOUR-API-KEY"; };
             tools = [ "*" ];
           };
         }
@@ -212,6 +299,12 @@ in
 
         The `tools` field accepts `["*"]` to enable all tools or a list of
         specific tool names.
+
+        These values are written to the world-readable Nix store, so avoid
+        putting API keys or tokens in `headers`, `env`, or other values. For
+        a local server that reads a secret from an environment variable, you
+        can set `env.<NAME>.file = "/run/secrets/..."` instead; Home Manager
+        then wraps the command so it reads the file at startup.
 
         See <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers>
         for the documentation.
@@ -262,7 +355,7 @@ in
         Language server packages are not installed automatically. Add them to
         {option}`home.packages` when needed.
 
-        See <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-lsp-servers>
+        See <https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/add-lsp-servers>
         for the documentation.
       '';
     };
@@ -362,26 +455,75 @@ in
   config = mkIf cfg.enable {
     assertions = [
       {
-        assertion = !lib.hm.strings.isPathLike cfg.agents || lib.pathIsDirectory cfg.agents;
+        assertion = !lib.isPath cfg.agents || lib.pathIsDirectory cfg.agents;
         message = "`programs.github-copilot-cli.agents` must be a directory when set to a path";
       }
       {
-        assertion = !lib.hm.strings.isPathLike cfg.skills || lib.pathIsDirectory cfg.skills;
+        assertion = !lib.isPath cfg.skills || lib.pathIsDirectory cfg.skills;
         message = "`programs.github-copilot-cli.skills` must be a directory when set to a path";
       }
     ];
 
     home.packages = mkIf (cfg.package != null) [ cfg.package ];
 
+    warnings = lib.optional (lib.any (key: lib.hasAttr key cfg.settings) trustedFolderKeys) ''
+      programs.github-copilot-cli.settings: trusted_folders and trustedFolders
+      are not written to settings.json. Copilot CLI keeps trusted folders in
+      its own state; use programs.github-copilot-cli.trustedFolders instead.
+    '';
+
+    home.activation.githubCopilotCliTrustedFolders = mkIf (cfg.trustedFolders != [ ]) (
+      lib.hm.dag.entryAfter [ "linkGeneration" ] (
+        lib.hm.generators.mkImpureConfigMerger {
+          inherit pkgs;
+          format = "json";
+          empty = "{}";
+          jqOperation = ''
+            $dynamic + {
+              trustedFolders: (($dynamic.trustedFolders // [ ]) as $have | $have + ($static.trustedFolders - $have))
+            }
+          '';
+          path = "${cfg.configDir}/config.json";
+          staticSettings = jsonFormat.generate "github-copilot-cli-trusted-folders.json" {
+            inherit (cfg) trustedFolders;
+          };
+          # Copilot CLI starts config.json with a comment header.
+          reader = "${lib.getExe json5} --as-json";
+          mode = "600";
+          verboseMsg = "Adding trusted folders to ${cfg.configDir}/config.json";
+        }
+      )
+    );
+
+    home.activation.githubCopilotCliSettings = mkIf (cfg.mutableSettings && userSettings != { }) (
+      lib.hm.dag.entryAfter [ "linkGeneration" ] (
+        lib.hm.generators.mkImpureConfigMerger {
+          inherit pkgs;
+          format = "json";
+          empty = "{}";
+          jqOperation = "$dynamic * $static";
+          path = "${cfg.configDir}/settings.json";
+          staticSettings = settingsFile;
+          reader = "${lib.getExe json5} --as-json";
+        }
+      )
+    );
+
+    # Turning mutableSettings off links settings.json again; remove an
+    # unchanged merged copy first so the link can replace it.
+    home.activation.githubCopilotCliImmutableSettings =
+      let
+        cleanup = lib.hm.generators.mkImpureConfigCleanup {
+          file = config.home.file."${cfg.configDir}/settings.json";
+        };
+      in
+      mkIf (!cfg.mutableSettings && userSettings != { } && cleanup != "") (
+        lib.hm.dag.entryBetween [ "linkGeneration" ] [ "writeBoundary" ] cleanup
+      );
+
     home.file = {
-      # NOTE: Copilot will try to add a firstLaunchAt date and crash if the
-      # file exists but does not have this key set. Only generate the file when
-      # the user has explicitly configured settings, and always inject the
-      # default so the managed file stays valid.
-      "${cfg.configDir}/config.json" = mkIf (cfg.settings != { }) {
-        source = jsonFormat.generate "github-copilot-cli-config.json" (
-          { firstLaunchAt = "1970-01-01T00:00:00.000Z"; } // cfg.settings
-        );
+      "${cfg.configDir}/settings.json" = mkIf (!cfg.mutableSettings && userSettings != { }) {
+        source = settingsFile;
       };
 
       "${cfg.configDir}/mcp-config.json" = mkIf (mergedMcpServers != { }) {
@@ -405,12 +547,12 @@ in
           };
 
       "${cfg.configDir}/agents" = mkIf (lib.hm.strings.isPathLike cfg.agents) {
-        source = cfg.agents;
+        source = normalizeDirectory "github-copilot-cli-agents" "agents" cfg.agents;
         recursive = true;
       };
 
       "${cfg.configDir}/skills" = mkIf (lib.hm.strings.isPathLike cfg.skills) {
-        source = cfg.skills;
+        source = normalizeDirectory "github-copilot-cli-skills" "skills" cfg.skills;
         recursive = true;
       };
     }
@@ -425,9 +567,14 @@ in
     // lib.optionalAttrs (builtins.isAttrs cfg.skills) (
       lib.mapAttrs' (
         name: content:
-        if lib.hm.strings.isPathLike content && lib.pathIsDirectory content then
+        if lib.isPath content && lib.pathIsDirectory content then
           lib.nameValuePair "${cfg.configDir}/skills/${name}" {
             source = content;
+            recursive = true;
+          }
+        else if lib.hm.strings.isPathLike content && !lib.isPath content then
+          lib.nameValuePair "${cfg.configDir}/skills/${name}" {
+            source = normalizeSkill content;
             recursive = true;
           }
         else

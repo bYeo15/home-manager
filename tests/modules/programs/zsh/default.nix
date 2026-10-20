@@ -1,20 +1,22 @@
 {
   zsh-abbr = ./zsh-abbr.nix;
   zsh-aliases = ./aliases.nix;
+  zsh-conflicting-highlighters = ./conflicting-highlighters.nix;
   zsh-dotdir-absolute = import ./dotdir.nix "absolute";
   zsh-dotdir-default = import ./dotdir.nix "default";
   zsh-dotdir-path-normalization-abs-no-slash = import ./dotdir.nix "abs-no-slash";
   zsh-dotdir-path-normalization-abs-slash = import ./dotdir.nix "abs-slash";
-  zsh-dotdir-path-normalization-rel-no-slash = import ./dotdir.nix "rel-no-slash";
-  zsh-dotdir-path-normalization-rel-slash = import ./dotdir.nix "rel-slash";
   zsh-dotdir-path-normalization-root-no-slash = import ./dotdir.nix "root-no-slash";
   zsh-dotdir-path-normalization-root-slash = import ./dotdir.nix "root-slash";
   zsh-dotdir-path-normalization-abs-space = import ./dotdir.nix "abs-space";
   zsh-dotdir-relative = import ./dotdir.nix "relative";
   zsh-dotdir-shell-variable = import ./dotdir.nix "shell-variable";
+  zsh-fast-syntax-highlighting = ./fast-syntax-highlighting.nix;
+  zsh-fast-syntax-highlighting-options = ./fast-syntax-highlighting-options.nix;
   zsh-history-ignore-pattern = ./history-ignore-pattern.nix;
   zsh-history-path-absolute = import ./history-path.nix "absolute";
   zsh-history-path-default = import ./history-path.nix "default";
+  zsh-history-path-relative-disabled = ./history-path-relative-disabled.nix;
   zsh-history-path-relative = import ./history-path.nix "relative";
   zsh-history-path-xdg-variable = import ./history-path.nix "xdg-variable";
   zsh-history-path-zdotdir-variable = import ./history-path.nix "zdotdir-variable";

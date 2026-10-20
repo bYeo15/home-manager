@@ -32,7 +32,31 @@ in
 
   imports = [
     ./plugins
-    ./deprecated.nix
+    (lib.mkRemovedOptionModule [
+      "programs"
+      "zsh"
+      "enableAutosuggestions"
+    ] "Use `programs.zsh.autosuggestion.enable` instead.")
+    (lib.mkRemovedOptionModule [
+      "programs"
+      "zsh"
+      "enableSyntaxHighlighting"
+    ] "Use `programs.zsh.syntaxHighlighting.enable` instead.")
+    (lib.mkRemovedOptionModule [
+      "programs"
+      "zsh"
+      "initExtra"
+    ] "Use `programs.zsh.initContent` instead.")
+    (lib.mkRemovedOptionModule [
+      "programs"
+      "zsh"
+      "initExtraFirst"
+    ] "Use `programs.zsh.initContent` with `lib.mkBefore` instead.")
+    (lib.mkRemovedOptionModule [
+      "programs"
+      "zsh"
+      "initExtraBeforeCompInit"
+    ] "Use `programs.zsh.initContent` with `lib.mkOrder 550` instead.")
     ./history.nix
   ];
   options =
@@ -82,12 +106,54 @@ in
           };
         };
       };
+
+      fastSyntaxHighlightingModule = types.submodule {
+        options = {
+          enable = mkEnableOption "zsh fast syntax highlighting";
+
+          package = lib.mkPackageOption pkgs "zsh-fast-syntax-highlighting" { };
+
+          theme = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "clean";
+            description = ''
+              If non-null, Home Manager will run {command}`fast-theme -q`
+              with this value to select the theme. `fast-theme` persists the
+              selected theme in fast-syntax-highlighting's work directory, so
+              setting this option back to `null` stops Home Manager from
+              invoking {command}`fast-theme` but does not reset an already
+              persisted theme. Run {command}`fast-theme -r` manually to clear
+              upstream state.
+
+              See [upstream's documentation](https://github.com/zdharma-continuum/fast-syntax-highlighting/blob/master/THEME_GUIDE.md)
+            '';
+          };
+
+          settings = mkOption {
+            type = types.attrsOf types.str;
+            default = { };
+            example = {
+              use_brackets = "0";
+              "chroma-," = "→chroma/-precommand.ch";
+              "chroma-comma" = "→chroma/-precommand.ch";
+            };
+            description = ''
+              Custom values to add to `FAST_HIGHLIGHT`, like custom chroma
+              configuration (see [upstream's documentation](https://github.com/zdharma-continuum/fast-syntax-highlighting/blob/master/CHROMA_GUIDE.adoc)
+              and its [built-in chromas](https://github.com/zdharma-continuum/fast-syntax-highlighting/tree/master/%E2%86%92chroma)).
+            '';
+          };
+        };
+      };
     in
     {
       programs.zsh = {
         enable = mkEnableOption "Z shell (Zsh)";
 
-        package = lib.mkPackageOption pkgs "zsh" { };
+        package = lib.mkPackageOption pkgs "zsh" {
+          nullable = true;
+        };
 
         autocd = mkOption {
           default = null;
@@ -119,9 +185,10 @@ in
           '';
           example = literalExpression ''"''${config.xdg.configHome}/zsh"'';
           description = ''
-            Directory where the zsh configuration and more should be located,
-            relative to the users home directory. The default is the home
-            directory.
+            Absolute path to the directory where the zsh configuration should
+            be located. Defaults to the XDG configuration directory when XDG
+            is enabled and `home.stateVersion` is at least "26.05", and to the
+            home directory otherwise.
           '';
           type = types.nullOr types.str;
         };
@@ -189,6 +256,12 @@ in
           type = syntaxHighlightingModule;
           default = { };
           description = "Options related to zsh-syntax-highlighting.";
+        };
+
+        fastSyntaxHighlighting = mkOption {
+          type = fastSyntaxHighlightingModule;
+          default = { };
+          description = "Options related to zsh-fast-syntax-highlighting.";
         };
 
         autosuggestion = {
@@ -269,9 +342,9 @@ in
           default = "";
           type = types.lines;
           example = lib.literalExpression ''
-            lib.mkOrder 1200 ''''
+            lib.mkOrder 1200 '''
               echo "Hello zsh initContent!"
-            '''';
+            ''';
           '';
           description = ''
             Content to be added to {file}`.zshrc`.
@@ -279,9 +352,9 @@ in
             To specify the order, use `lib.mkOrder`.
 
             Common order values:
-            - 500 (mkBefore): Early initialization (replaces initExtraFirst)
-            - 550: Before completion initialization (replaces initExtraBeforeCompInit)
-            - 1000 (default): General configuration (replaces initExtra)
+            - 500 (mkBefore): Early initialization
+            - 550: Before completion initialization
+            - 1000 (default): General configuration
             - 1500 (mkAfter): Last to run configuration
 
             To specify both content in Early initialization and General configuration, use `lib.mkMerge`.
@@ -409,6 +482,10 @@ in
         {
           assertions = [
             {
+              assertion = lib.hasPrefix "/" cfg.dotDir || lib.hasInfix "$" cfg.dotDir;
+              message = "programs.zsh.dotDir must be an absolute path. Use home-manager config options instead of relative paths.";
+            }
+            {
               assertion = !lib.hasInfix "$" cfg.dotDir;
               message = ''
                 programs.zsh.dotDir cannot contain shell variables as it is used for file creation at build time.
@@ -421,40 +498,35 @@ in
                 - config.xdg.cacheHome (XDG cache directory)
               '';
             }
+            {
+              assertion =
+                lib.count (x: x) [
+                  cfg.syntaxHighlighting.enable
+                  cfg.fastSyntaxHighlighting.enable
+                ] <= 1;
+              message = ''
+                Only one Zsh syntax highlighter can be enabled at a time.
+              '';
+            }
           ];
 
           warnings =
             lib.optionals
-              (cfg.dotDir != homeDir && !lib.hasPrefix "/" cfg.dotDir && !lib.hasInfix "$" cfg.dotDir)
+              (
+                config.xdg.enable
+                && !lib.versionAtLeast config.home.stateVersion "26.05"
+                && options.programs.zsh.dotDir.highestPrio >= 1500
+              )
               [
                 ''
-                  Using relative paths in programs.zsh.dotDir is deprecated and will be removed in a future release.
-                  Current dotDir: ${cfg.dotDir}
-                  Consider using absolute paths or home-manager config options instead.
-                  You can replace relative paths or environment variables with options like:
-                  - config.home.homeDirectory (user's home directory)
-                  - config.xdg.configHome (XDG config directory)
-                  - config.xdg.dataHome (XDG data directory)
-                  - config.xdg.cacheHome (XDG cache directory)
+                  The default value of `programs.zsh.dotDir` will change in future versions.
+                  You are currently using the legacy default (home directory) because `home.stateVersion` is less than "26.05".
+                  To silence this warning and lock in the current behavior, set:
+                    programs.zsh.dotDir = config.home.homeDirectory;
+                  To adopt the new behavior (XDG config directory), set:
+                    programs.zsh.dotDir = "''${config.xdg.configHome}/zsh";
                 ''
-              ]
-            ++
-              lib.optionals
-                (
-                  config.xdg.enable
-                  && !lib.versionAtLeast config.home.stateVersion "26.05"
-                  && options.programs.zsh.dotDir.highestPrio >= 1500
-                )
-                [
-                  ''
-                    The default value of `programs.zsh.dotDir` will change in future versions.
-                    You are currently using the legacy default (home directory) because `home.stateVersion` is less than "26.05".
-                    To silence this warning and lock in the current behavior, set:
-                      programs.zsh.dotDir = config.home.homeDirectory;
-                    To adopt the new behavior (XDG config directory), set:
-                      programs.zsh.dotDir = "''${config.xdg.configHome}/zsh";
-                  ''
-                ];
+              ];
         }
 
         (mkIf (cfg.envExtra != "") {
@@ -522,10 +594,9 @@ in
         {
           lib.zsh = zshLib;
 
-          home.packages = [
-            cfg.package
-          ]
-          ++ lib.optional cfg.enableCompletion (lib.lowPrio pkgs.nix-zsh-completions);
+          home.packages = lib.mkIf (cfg.package != null) (
+            [ cfg.package ] ++ lib.optional cfg.enableCompletion (lib.lowPrio pkgs.nix-zsh-completions)
+          );
 
           # NOTE: Always include "main" highlighter with normal priority.
           # Option default priority will cause `main` to get dropped by customization.
@@ -544,9 +615,12 @@ in
               for profile in ''${(z)NIX_PROFILES}; do
                 fpath+=($profile/share/zsh/site-functions $profile/share/zsh/$ZSH_VERSION/functions $profile/share/zsh/vendor-completions)
               done
-
-              HELPDIR="${cfg.package}/share/zsh/$ZSH_VERSION/help"
             '')
+            (lib.mkIf (cfg.package != null) (
+              mkOrder 520 ''
+                HELPDIR="${cfg.package}/share/zsh/$ZSH_VERSION/help"
+              ''
+            ))
 
             (lib.mkIf (cfg.defaultKeymap != null) (
               mkOrder 530 ''
@@ -627,6 +701,22 @@ in
                     lib.mapAttrsToList (
                       name: value: "ZSH_HIGHLIGHT_PATTERNS+=(${lib.escapeShellArg name} ${lib.escapeShellArg value})"
                     ) cfg.syntaxHighlighting.patterns
+                  )}
+                ''
+            ))
+
+            (lib.mkIf cfg.fastSyntaxHighlighting.enable (
+              mkOrder 1200
+                # Load zsh-fast-syntax-highlighting after all custom widgets have been created
+                ''
+                  source ${cfg.fastSyntaxHighlighting.package}/share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
+                  ${lib.optionalString (cfg.fastSyntaxHighlighting.theme != null) ''
+                    fast-theme -q ${cfg.fastSyntaxHighlighting.theme}
+                  ''}
+                  ${lib.concatStringsSep "\n" (
+                    lib.mapAttrsToList (
+                      name: value: "FAST_HIGHLIGHT+=(${lib.escapeShellArg name} ${lib.escapeShellArg value})"
+                    ) cfg.fastSyntaxHighlighting.settings
                   )}
                 ''
             ))

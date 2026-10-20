@@ -96,8 +96,8 @@ let
             `ultimate` or `5`
             : I trust ultimately.
 
-            See the [Key Management chapter](https://www.gnupg.org/gph/en/manual/x334.html)
-            of the GNU Privacy Handbook for more.
+            See [Trust Values](https://www.gnupg.org/documentation/manuals/gnupg/Trust-Values.html)
+            in the GnuPG manual for more.
           '';
         };
       };
@@ -109,7 +109,7 @@ let
 
   importTrustBashFunctions =
     let
-      gpg = "${cfg.package}/bin/gpg";
+      gpg = if cfg.package != null then "${cfg.package}/bin/gpg" else "gpg";
     in
     ''
       function gpgKeyId() {
@@ -132,7 +132,7 @@ let
 
   keyringFiles =
     let
-      gpg = "${cfg.package}/bin/gpg";
+      gpg = if cfg.package != null then "${cfg.package}/bin/gpg" else "gpg";
 
       importKey =
         { source, trust, ... }:
@@ -163,7 +163,8 @@ in
     enable = lib.mkEnableOption "GnuPG";
 
     package = lib.mkPackageOption pkgs "gnupg" {
-      example = "pkgs.gnupg23";
+      nullable = true;
+      example = "pkgs.gnupg24";
       extraDescription = "Also used by the gpg-agent service.";
     };
 
@@ -303,7 +304,7 @@ in
       no-symkey-cache = mkDefault true;
     };
 
-    home.packages = [ cfg.package ];
+    home.packages = lib.mkIf (cfg.package != null) [ cfg.package ];
     home.sessionVariables = {
       GNUPGHOME = cfg.homedir;
     };
@@ -336,7 +337,7 @@ in
 
       importGpgKeys =
         let
-          gpg = "${cfg.package}/bin/gpg";
+          gpg = if cfg.package != null then "${cfg.package}/bin/gpg" else "gpg";
 
           importKey =
             { source, trust, ... }:

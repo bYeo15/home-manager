@@ -184,38 +184,62 @@ in
 
   options = {
     home.username = mkOption {
-      type = types.str;
-      defaultText = literalExpression ''
-        "$USER"   for state version < 20.09,
-        undefined for state version ≥ 20.09
+      type = types.nonEmptyStr;
+      defaultText = lib.literalMD ''
+        `$USER`,   for state version < 20.09,
+        undefined, otherwise.
       '';
       example = "jane.doe";
-      description = "The user's username.";
+      description = ''
+        The user's username.
+
+        If Home Manager is installed as a NixOS or nix-darwin submodule, it is
+        set to `osConfig.users.users.<name>.name`.
+      '';
     };
 
     home.uid = mkOption {
       type = types.nullOr types.ints.unsigned;
       default = null;
       example = 1000;
-      description = "The user's uid.";
+      description = ''
+        The user's uid.
+
+        If Home Manager is installed as a NixOS or nix-darwin submodule, it is
+        set to `osConfig.users.users.<name>.uid`.
+      '';
     };
 
     home.homeDirectory = mkOption {
       type = types.path;
-      defaultText = literalExpression ''
-        "$HOME"   for state version < 20.09,
-        undefined for state version ≥ 20.09
+      defaultText = lib.literalMD ''
+        `$HOME`,   for state version < 20.09
+        undefined, otherwise.
       '';
       apply = toString;
       example = "/home/jane.doe";
-      description = "The user's home directory. Must be an absolute path.";
+      description = ''
+        The user's home directory. Must be an absolute path.
+
+        If Home Manager is installed as a NixOS or nix-darwin submodule, it is
+        set to `osConfig.users.users.<name>.home`.
+      '';
     };
 
     home.profileDirectory = mkOption {
       type = types.path;
-      defaultText = literalExpression ''
-        "''${home.homeDirectory}/.nix-profile"  or
-        "/etc/profiles/per-user/''${home.username}"
+      default =
+        if config.submoduleSupport.enable && config.submoduleSupport.externalPackageInstall then
+          "/etc/profiles/per-user/${cfg.username}"
+        else if config.nix.useXdg then
+          "${config.xdg.stateHome}/nix/profile"
+        else
+          cfg.homeDirectory + "/.nix-profile";
+      defaultText = lib.literalMD ''
+        - `/etc/profiles/per-user/''${home.username}`, if Home Manager is installed as
+          a submodule and `home-manager.useUserPackages` is enabled, else
+        - `''${xdg.stateHome}/nix/profile`, if `nix.useXdg` is enabled, else
+        - `''${home.homeDirectory}/.nix-profile`.
       '';
       readOnly = true;
       description = ''
@@ -506,6 +530,45 @@ in
       description = "The package containing the complete activation script.";
     };
 
+    home.backupCommand = mkOption {
+      type = types.nullOr (types.either types.str types.path);
+      default = null;
+      example = literalExpression "\${pkgs.trash-cli}/bin/trash";
+      description = ''
+        On activation run this command on each existing file
+        rather than exiting with an error.
+
+        This is useful for standalone installations, for example when
+        using {var}`home-manager.lib.homeManagerConfiguration`, where
+        this cannot be set through the `home-manager` command line
+        tool's `-B` option.
+      '';
+    };
+
+    home.backupFileExtension = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "backup";
+      description = ''
+        On activation move existing files by appending the given
+        file extension rather than exiting with an error.
+
+        This is useful for standalone installations, for example when
+        using {var}`home-manager.lib.homeManagerConfiguration`, where
+        this cannot be set through the `home-manager` command line
+        tool's `-b` option.
+      '';
+    };
+
+    home.overwriteBackup = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Whether to force overwriting of existing backup files when using
+        [](#opt-home.backupFileExtension).
+      '';
+    };
+
     home.activationGenerateGcRoot = mkOption {
       internal = true;
       type = types.bool;
@@ -569,17 +632,6 @@ in
   };
 
   config = {
-    assertions = [
-      {
-        assertion = config.home.username != "";
-        message = "Username could not be determined";
-      }
-      {
-        assertion = config.home.homeDirectory != "";
-        message = "Home directory could not be determined";
-      }
-    ];
-
     warnings =
       let
         hmRelease = config.home.version.release;
@@ -621,17 +673,12 @@ in
       lib.mkDefault (builtins.getEnv "HOME")
     );
 
-    home.profileDirectory =
-      if config.submoduleSupport.enable && config.submoduleSupport.externalPackageInstall then
-        "/etc/profiles/per-user/${cfg.username}"
-      else if config.nix.useXdg then
-        "${config.xdg.stateHome}/nix/profile"
-      else
-        cfg.homeDirectory + "/.nix-profile";
-
     programs.bash.shellAliases = cfg.shellAliases;
     programs.zsh.shellAliases = cfg.shellAliases;
-    programs.fish.shellAliases = cfg.shellAliases;
+    programs.fish = {
+      shellAliases = lib.mkIf (!config.programs.fish.preferAbbrs) cfg.shellAliases;
+      shellAbbrs = lib.mkIf config.programs.fish.preferAbbrs cfg.shellAliases;
+    };
     programs.nushell.shellAliases = cfg.shellAliases;
 
     home.sessionVariables =
@@ -816,6 +863,21 @@ in
           cd $HOME
 
           export PATH="${activationBinPaths}"
+
+          # Fall back to the declarative backup options when the
+          # corresponding environment variable has not already been set,
+          # for example by the `home-manager` command line tool or by the
+          # NixOS/nix-darwin modules.
+          ${lib.optionalString (config.home.backupCommand != null) ''
+            [[ -v HOME_MANAGER_BACKUP_COMMAND ]] || export HOME_MANAGER_BACKUP_COMMAND=${lib.escapeShellArg config.home.backupCommand}
+          ''}
+          ${lib.optionalString (config.home.backupFileExtension != null) ''
+            [[ -v HOME_MANAGER_BACKUP_EXT ]] || export HOME_MANAGER_BACKUP_EXT=${lib.escapeShellArg config.home.backupFileExtension}
+          ''}
+          ${lib.optionalString config.home.overwriteBackup ''
+            [[ -v HOME_MANAGER_BACKUP_OVERWRITE ]] || export HOME_MANAGER_BACKUP_OVERWRITE=1
+          ''}
+
           ${config.lib.bash.initHomeManagerLib}
 
           # The driver version indicates the behavior expected by the caller of
@@ -912,6 +974,7 @@ in
             --subst-var-by GENERATION_DIR $out
 
           ln -s ${config.home-files} $out/home-files
+          ln -s ${config.home.internal.filePutterConfig} $out/putter.json
           ln -s ${cfg.path} $out/home-path
 
           cp "$extraDependenciesPath" "$out/extra-dependencies"

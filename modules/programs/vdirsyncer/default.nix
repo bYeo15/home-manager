@@ -36,6 +36,7 @@ let
       (getAttrs [ "type" "fileExt" "encoding" ] a.local)
       // {
         inherit (a.local) path;
+        readOnly = a.vdirsyncer.localReadOnly;
         postHook =
           if a.vdirsyncer.postHook != null then
             (pkgs.writeShellScriptBin "post-hook" a.vdirsyncer.postHook + "/bin/post-hook")
@@ -65,6 +66,7 @@ let
             "clientIdCommand"
             "clientSecretCommand"
             "timeRange"
+            "useVcard4"
           ] a.vdirsyncer
       )
     );
@@ -89,6 +91,8 @@ let
       ''fileext = "${v}"''
     else if (n == "encoding") then
       ''encoding = "${v}"''
+    else if (n == "readOnly") then
+      "read_only = ${lib.boolToString v}"
     else if (n == "postHook") then
       ''post_hook = "${v}"''
     else if (n == "url") then
@@ -102,7 +106,7 @@ let
     else if (n == "itemTypes") then
       "item_types = ${listString (map wrap v)}"
     else if (n == "useVcard4") then
-      "use_vcard_4 = ${v}"
+      "use_vcard_4 = ${lib.boolToString v}"
     else if (n == "userName") then
       ''username = "${v}"''
     else if (n == "userNameCommand") then
@@ -268,16 +272,25 @@ in
               "itemTypes"
             ]
             ++ remoteOptions
-          else if (t == "carddav" || t == "http") then
+          else if (t == "http") then
             remoteOptions
+          else if (t == "carddav") then
+            [
+              "useVcard4"
+            ]
+            ++ remoteOptions
           else if (t == "filesystem") then
             [
               "fileExt"
               "encoding"
               "postHook"
+              "readOnly"
             ]
           else if (t == "singlefile") then
-            [ "encoding" ]
+            [
+              "encoding"
+              "readOnly"
+            ]
           else if (t == "google_calendar") then
             [
               "timeRange"
